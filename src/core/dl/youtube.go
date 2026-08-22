@@ -230,6 +230,10 @@ func (y *youTubeData) downloadTrack(info utils.TrackInfo, video bool) (string, e
 			return "", err
 		}
 
+		if err := validateDownloadedMedia(filePath, video); err != nil {
+			slog.Warn("YouTube API returned invalid media", "video_id", info.Id, "error", err)
+			return y.downloadWithYtDlp(info.Id, video)
+		}
 		return filePath, nil
 	}
 
@@ -269,11 +273,46 @@ func (y *youTubeData) downloadWithYtDlp(videoID string, video bool) (string, err
 		return "", fmt.Errorf("no output path was returned for %s", videoID)
 	}
 
-	if _, err := os.Stat(downloadedPathStr); os.IsNotExist(err) {
-		return "", fmt.Errorf("the file was not found at the reported path: %s", downloadedPathStr)
+	if _, err := os.Stat(downloadedPathStr); err != nil {
+		return "", fmt.Errorf("downloaded file is unavailable at %s: %w", downloadedPathStr, err)
+	}
+
+	if err := validateDownloadedMedia(downloadedPathStr, video); err != nil {
+		return "", err
 	}
 
 	return downloadedPathStr, nil
+}
+
+func validateDownloadedMedia(filePath string, video bool) error {
+	if filePath == "" {
+		return errors.New("download returned an empty file path")
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("downloaded file is unavailable at %s: %w", filePath, err)
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("downloaded media is empty: %s", filePath)
+	}
+
+	streamType := "a:0"
+	if video {
+		streamType = "v:0"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", streamType,
+		"-show_entries", "stream=codec_type", "-of", "csv=p=0", filePath)
+	if output, err := cmd.Output(); err != nil || strings.TrimSpace(string(output)) == "" {
+		if ctx.Err() != nil {
+			return fmt.Errorf("timed out validating downloaded media: %s", filePath)
+		}
+		return fmt.Errorf("downloaded media is invalid or incomplete: %s", filePath)
+	}
+
+	return nil
 }
 
 func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
@@ -285,8 +324,8 @@ func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
 		"--quiet",
 		"--geo-bypass",
 		"--retries", "2",
-		"--continue",
-		"--no-part",
+		"--no-continue",
+		"--force-overwrites",
 		"--concurrent-fragments", "3",
 		"--socket-timeout", "10",
 		"--throttled-rate", "100K",
