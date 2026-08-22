@@ -110,7 +110,6 @@ func (c *TelegramCalls) playSong(bot *td.Client, chatID int64, song *utils.Cache
 
 	if err = c.downloadAndPrepareSong(bot, song, reply); err != nil {
 		logger.Error("[playSong] Download failed", "error", err)
-		cache.ChatCache.RemoveCurrentSong(chatID)
 		if nextErr := c.PlayNext(bot, chatID); nextErr != nil {
 			logger.Error("[playSong] Failed to advance after download failure", "error", nextErr)
 		}
@@ -120,7 +119,6 @@ func (c *TelegramCalls) playSong(bot *td.Client, chatID int64, song *utils.Cache
 	if err = c.PlayMedia(bot, chatID, song.FilePath, song.IsVideo, ""); err != nil {
 		_, _ = reply.EditText(bot, err.Error(), &td.EditTextMessageOpts{ParseMode: "HTML", DisableWebPagePreview: true})
 		logger.Error("[playSong] Playback failed", "error", err)
-		cache.ChatCache.RemoveCurrentSong(chatID)
 		if nextErr := c.PlayNext(bot, chatID); nextErr != nil {
 			logger.Error("[playSong] Failed to advance after playback failure", "error", nextErr)
 		}

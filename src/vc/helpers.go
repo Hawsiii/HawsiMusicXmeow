@@ -66,6 +66,15 @@ func (c *TelegramCalls) PlayNext(bot *td.Client, chatID int64) error {
 	return c.handleNoSong(bot, chatID)
 }
 
+// PlayCurrent starts the first queued song without advancing the queue.
+func (c *TelegramCalls) PlayCurrent(bot *td.Client, chatID int64) error {
+	song := cache.ChatCache.GetPlayingTrack(chatID)
+	if song == nil {
+		return c.handleNoSong(bot, chatID)
+	}
+	return c.playSong(bot, chatID, song)
+}
+
 // handleNoSong manages the situation where there are no more songs in the queue by stopping the playback
 // and sending a notification to the chat.
 func (c *TelegramCalls) handleNoSong(bot *td.Client, chatID int64) error {

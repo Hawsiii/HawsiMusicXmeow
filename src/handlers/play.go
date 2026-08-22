@@ -418,7 +418,9 @@ func handleMultipleTracks(c *td.Client, m *td.Message, updater *td.Message, trac
 	}
 
 	if shouldPlayFirst && firstTrack != nil {
-		_ = vc.Calls.PlayNext(c, chatId)
+		if err := vc.Calls.PlayCurrent(c, chatId); err != nil {
+			c.Logger.Warn("failed to start queued playback", "error", err)
+		}
 	}
 
 	_, err := updater.EditText(c, fullMessage, &td.EditTextMessageOpts{
