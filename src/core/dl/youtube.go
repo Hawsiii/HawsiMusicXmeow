@@ -25,6 +25,27 @@ import (
 	"ashokshau/tgmusic/src/utils"
 )
 
+// Meow API (music.yukiapi.site) used for downloadTrack/downloadWithApi below.
+// Hardcoded here on purpose (not read from config/env), ported from the
+// Python yt.py reference: GET {meowApiUrl}/stream/{videoID}?key=...&type=...&quality=...
+// Get a key from @MeowApiRobot on Telegram.
+const (
+	meowApiUrl = "https://music.yukiapi.site"
+	meowApiKey = "YOUR_API_KEY"
+
+	meowAudioQuality = "128"
+	meowVideoQuality = "480"
+
+	// meowMinValidSize mirrors the Python reference's 10000-byte sanity check
+	// (rejects tiny error/placeholder responses before they hit ffprobe).
+	meowMinValidSize = 10000
+)
+
+// meowApiConfigured reports whether the hardcoded stream API above is usable.
+func meowApiConfigured() bool {
+	return meowApiUrl != "" && meowApiKey != "" && meowApiKey != "YOUR_API_KEY"
+}
+
 // youTubeData provides an interface for fetching track and playlist information from YouTube.
 type youTubeData struct {
 	Query    string
@@ -223,15 +244,15 @@ func (y *youTubeData) resolveLiveStream(videoID string) (string, bool, error) {
 
 // downloadTrack handles the download of a track from YouTube.
 func (y *youTubeData) downloadTrack(info utils.TrackInfo, video bool) (string, error) {
-	if y.ApiUrl != "" && y.APIKey != "" {
+	if meowApiConfigured() {
 		filePath, err := y.downloadWithApi(info.Id, video)
 		if err != nil {
-			slog.Warn("YouTube API download failed", "video_id", info.Id, "error", err)
-			return "", err
+			slog.Warn("Meow API download failed", "video_id", info.Id, "error", err)
+			return y.downloadWithYtDlp(info.Id, video)
 		}
 
 		if err := validateDownloadedMedia(filePath, video); err != nil {
-			slog.Warn("YouTube API returned invalid media", "video_id", info.Id, "error", err)
+			slog.Warn("Meow API returned invalid media", "video_id", info.Id, "error", err)
 			return y.downloadWithYtDlp(info.Id, video)
 		}
 		return filePath, nil
@@ -367,32 +388,58 @@ func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
 	return params
 }
 
-// downloadWithApi downloads a track using the external API.
+// downloadWithApi downloads a track directly from the hardcoded Meow API
+// (meowApiUrl/meowApiKey), mirroring the Python yt.py download_song/
+// download_video helpers: it streams
+// {meowApiUrl}/stream/{videoID}?key=...&type=...&quality=... straight to disk.
 func (y *youTubeData) downloadWithApi(videoID string, video bool) (string, error) {
-	videoUrl := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
-	a := newApiData(videoUrl)
-	if a.ApiUrl == "" || a.APIKey == "" {
+	if videoID == "" {
+		return "", errors.New("videoID is empty")
+	}
+
+	if !meowApiConfigured() {
 		return "", errors.New("invalid API configuration")
 	}
 
-	track := utils.TrackInfo{
-		Id:       videoID,
-		URL:      videoUrl,
-		Platform: utils.YouTube,
-		CdnURL:   a.buildDownloadURL(video),
+	downloadType := "audio"
+	ext := ".mp3"
+	quality := meowAudioQuality
+	if video {
+		downloadType = "video"
+		ext = ".mp4"
+		quality = meowVideoQuality
 	}
 
-	down, err := newDownload(track)
+	fileName := filepath.Join(config.DownloadsDir, videoID+ext)
+
+	// Reuse an already-downloaded file if it looks valid, same as the Python cache check.
+	if fi, err := os.Stat(fileName); err == nil && fi.Size() > meowMinValidSize {
+		return fileName, nil
+	}
+
+	streamURL := fmt.Sprintf(
+		"%s/stream/%s?key=%s&type=%s&quality=%s",
+		strings.TrimRight(meowApiUrl, "/"),
+		videoID,
+		meowApiKey,
+		downloadType,
+		quality,
+	)
+
+	slog.Info("Downloading via Meow API", "video_id", videoID, "type", downloadType)
+
+	localPath, err := downloadFile(streamURL, fileName, true)
 	if err != nil {
-		slog.Info("Error creating download: " + err.Error())
-		return "", err
+		if _, statErr := os.Stat(fileName); statErr == nil {
+			_ = os.Remove(fileName)
+		}
+		return "", fmt.Errorf("meow api download failed for %s: %w", videoID, err)
 	}
 
-	localPath, err := down.Process()
-	if err == nil {
-		return localPath, nil
+	if fi, err := os.Stat(localPath); err != nil || fi.Size() <= meowMinValidSize {
+		_ = os.Remove(localPath)
+		return "", fmt.Errorf("meow api returned an undersized file for %s", videoID)
 	}
 
-	slog.Warn("API download failed, falling back to yt-dlp", "video_id", videoID, "error", err)
-	return y.downloadWithYtDlp(videoID, video)
+	return localPath, nil
 }
