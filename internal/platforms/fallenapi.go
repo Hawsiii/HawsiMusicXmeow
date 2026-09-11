@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"regexp"
@@ -149,7 +150,7 @@ func (f *FallenApiPlatform) getDownloadURL(
 		)
 	}
 
-	if resp.IsError() {
+	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
 		err = sanitizeAPIError(fmt.Errorf(
 			"failed to download %s, api request failed with status: %d body: %s",
 			mediaURL,
@@ -179,7 +180,6 @@ func (f *FallenApiPlatform) downloadFromURL(
 ) error {
 	resp, err := rc.R().
 		SetContext(ctx).
-		SetOutputFileName(path).
 		Get(dlURL)
 	if err != nil {
 		os.Remove(path)
@@ -189,9 +189,21 @@ func (f *FallenApiPlatform) downloadFromURL(
 		}
 		return fmt.Errorf("http download failed: %w", err)
 	}
+	defer resp.Body.Close()
 
-	if resp.IsError() {
+	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
 		return fmt.Errorf("download failed with status: %d", resp.StatusCode())
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		os.Remove(path)
+		return err
 	}
 
 	return nil

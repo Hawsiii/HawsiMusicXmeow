@@ -50,7 +50,7 @@ import (
 func main() {
 	cfgCleanup, err := config.Load()
 	if err != nil {
-		gologging.FatalF(err.Error())
+		gologging.FatalF("%v", err)
 		return
 	}
 	defer cfgCleanup()

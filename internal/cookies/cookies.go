@@ -20,6 +20,7 @@ package cookies
 import (
 	"embed"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -99,14 +100,13 @@ func downloadCookieFile(url string) error {
 	rawURL := "https://batbin.me/raw/" + id
 	filePath := filepath.Join(cookieDir, id+".txt")
 
-	resp, err := client.R().
-		SetOutputFileName(filePath).
-		Get(rawURL)
+	resp, err := client.R().Get(rawURL)
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	if resp.IsError() {
+	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
 		return fmt.Errorf(
 			"unexpected status %d from %s",
 			resp.StatusCode(),
@@ -114,7 +114,14 @@ func downloadCookieFile(url string) error {
 		)
 	}
 
-	return nil
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, resp.Body)
+	return err
 }
 
 func loadCookieCache() error {

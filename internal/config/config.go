@@ -60,6 +60,10 @@ var (
 	PingImage           string
 	Port                string
 	EnablePprof         bool
+	MeowAPIURL          string
+	MeowAPIKey          string
+	MeowAudioQuality    string
+	MeowVideoQuality    string
 
 	StartTime   time.Time
 	LogFileName = "logs.txt"
@@ -123,6 +127,13 @@ func loadConfig() {
 	SpotifyClientSecret = getString("SPOTIFY_CLIENT_SECRET", "")
 	FallenAPIURL = getString("FALLEN_API_URL", "https://beta.fallenapi.fun")
 	FallenAPIKey = getString("FALLEN_API_KEY", "")
+	MeowAPIURL = strings.TrimRight(
+		getString("MEOW_API_URL", "https://music.yukiapi.site"),
+		"/",
+	)
+	MeowAPIKey = getString("MEOW_API_KEY", "")
+	MeowAudioQuality = getString("MEOW_AUDIO_QUALITY", "128")
+	MeowVideoQuality = getString("MEOW_VIDEO_QUALITY", "480")
 	DefaultLang = getString("DEFAULT_LANG", "en")
 	DurationLimit = int(getInt64("DURATION_LIMIT", 4200))
 	LeaveOnDemoted = getBool("LEAVE_ON_DEMOTED", false)
