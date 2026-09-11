@@ -184,7 +184,7 @@ func downloadWithMeow(ctx context.Context, track *state.Track) (string, error) {
 
 func meowDownloadContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if deadline, ok := parent.Deadline(); ok {
-		return context.WithDeadline(context.Background(), deadline)
+		return context.WithDeadline(parent, deadline)
 	}
 
 	return context.WithTimeout(parent, 2*time.Minute)
