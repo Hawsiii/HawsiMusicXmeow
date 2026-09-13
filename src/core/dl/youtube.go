@@ -284,11 +284,26 @@ func (y *youTubeData) downloadWithYtDlp(videoID string, video bool) (string, err
 	}
 
 	ytdlpParams := y.buildYtdlpParams(videoID, video)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	slog.Info("Running yt-dlp", "args", ytdlpParams)
-	cmd := exec.CommandContext(ctx, ytdlpParams[0], ytdlpParams[1:]...)
+	path, err := runYtDlpDownload(ctx, ytdlpParams, videoID, video)
+	if err == nil {
+		return path, nil
+	}
+
+	if !strings.Contains(strings.ToLower(err.Error()), "403") {
+		return "", err
+	}
+
+	fallbackParams := y.buildYtdlpFallbackParams(videoID, video)
+	slog.Warn("Retrying yt-dlp after HTTP 403", "video_id", videoID)
+	return runYtDlpDownload(ctx, fallbackParams, videoID, video)
+}
+
+func runYtDlpDownload(ctx context.Context, params []string, videoID string, video bool) (string, error) {
+
+	slog.Info("Running yt-dlp", "args", params)
+	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -319,6 +334,22 @@ func (y *youTubeData) downloadWithYtDlp(videoID string, video bool) (string, err
 	}
 
 	return downloadedPathStr, nil
+}
+
+func (y *youTubeData) buildYtdlpFallbackParams(videoID string, video bool) []string {
+	params := y.buildYtdlpParams(videoID, video)
+	for index := range params {
+		if params[index] == "-f" && index+1 < len(params) {
+			if video {
+				params[index+1] = "best[height<=720]/best"
+			} else {
+				params[index+1] = "ba/b"
+			}
+			break
+		}
+	}
+	params = append(params, "--extractor-args", "youtube:player_client=android,web")
+	return params
 }
 
 func validateDownloadedMedia(filePath string, video bool) error {
@@ -372,7 +403,6 @@ func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
 		"--no-embed-metadata",
 		"--no-embed-chapters",
 		"--no-embed-subs",
-		"--extractor-args", "youtube:player_js_version=actual",
 		"-o", outputTemplate,
 	}
 

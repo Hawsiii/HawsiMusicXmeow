@@ -32,7 +32,7 @@ func TestBuildMeowStreamURL(t *testing.T) {
 	}
 }
 
-func TestBuildYtdlpParamsDoesNotUseCookies(t *testing.T) {
+func TestBuildYtdlpParamsDoesNotUseCookieFiles(t *testing.T) {
 	params := (&youTubeData{}).buildYtdlpParams("abc123", false)
 
 	for i := 0; i < len(params)-1; i++ {
@@ -63,5 +63,17 @@ func TestBuildYtdlpParamsPrefers720pVideo(t *testing.T) {
 
 	if !found {
 		t.Fatalf("expected yt-dlp params to prefer 720p video, got %v", params)
+	}
+}
+
+func TestBuildYtdlpFallbackParamsBroadensFormatSelection(t *testing.T) {
+	params := (&youTubeData{}).buildYtdlpFallbackParams("abc123", false)
+	joined := strings.Join(params, " ")
+
+	if !strings.Contains(joined, "ba/b") {
+		t.Fatalf("expected fallback audio format, got %v", params)
+	}
+	if !strings.Contains(joined, "youtube:player_client=android,web") {
+		t.Fatalf("expected alternate YouTube clients, got %v", params)
 	}
 }
