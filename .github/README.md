@@ -138,6 +138,8 @@ The bot is configured via environment variables. See `sample.env` for all option
 | `SONG_DURATION_LIMIT` | Max song duration in seconds              |    ❌     |
 | `API_KEY`             | Your API key                              |    ❌     |
 | `API_URL`             | Your Shruti API base URL                  |    ❌     |
+| `MEOW_API_URL`        | Meow API base URL for YouTube downloads  |    ❌     |
+| `MEOW_API_KEY`        | Your Meow API key                         |    ❌     |
 
 </details>
 

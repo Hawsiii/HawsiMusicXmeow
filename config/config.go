@@ -29,6 +29,8 @@ var (
 	DbName              = getEnv("DB_NAME", "Anon")
 	ApiUrl              = getEnv("API_URL", "")
 	ApiKey              = os.Getenv("API_KEY")
+	MeowApiUrl          = getEnv("MEOW_API_URL", "https://music.yukiapi.site")
+	MeowApiKey          = os.Getenv("MEOW_API_KEY")
 	PipedApiUrl         = getEnv("PIPED_API_URL", "https://pipedapi.kavin.rocks")
 	OwnerId             = getEnvInt64("OWNER_ID", 0)
 	LoggerId            = getEnvInt64("LOGGER_ID", 0)

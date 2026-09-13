@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,14 +26,7 @@ import (
 	"ashokshau/tgmusic/src/utils"
 )
 
-// Meow API (music.yukiapi.site) used for downloadTrack/downloadWithApi below.
-// Hardcoded here on purpose (not read from config/env), ported from the
-// Python yt.py reference: GET {meowApiUrl}/stream/{videoID}?key=...&type=...&quality=...
-// Get a key from @MeowApiRobot on Telegram.
 const (
-	meowApiUrl = "https://music.yukiapi.site"
-	meowApiKey = "YOUR_API_KEY"
-
 	meowAudioQuality = "128"
 	meowVideoQuality = "480"
 
@@ -41,9 +35,8 @@ const (
 	meowMinValidSize = 10000
 )
 
-// meowApiConfigured reports whether the hardcoded stream API above is usable.
 func meowApiConfigured() bool {
-	return meowApiUrl != "" && meowApiKey != "" && meowApiKey != "YOUR_API_KEY"
+	return strings.TrimSpace(config.MeowApiUrl) != "" && strings.TrimSpace(config.MeowApiKey) != ""
 }
 
 // youTubeData provides an interface for fetching track and playlist information from YouTube.
@@ -388,10 +381,7 @@ func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
 	return params
 }
 
-// downloadWithApi downloads a track directly from the hardcoded Meow API
-// (meowApiUrl/meowApiKey), mirroring the Python yt.py download_song/
-// download_video helpers: it streams
-// {meowApiUrl}/stream/{videoID}?key=...&type=...&quality=... straight to disk.
+// downloadWithApi downloads a track from Meow's direct stream endpoint.
 func (y *youTubeData) downloadWithApi(videoID string, video bool) (string, error) {
 	if videoID == "" {
 		return "", errors.New("videoID is empty")
@@ -417,14 +407,10 @@ func (y *youTubeData) downloadWithApi(videoID string, video bool) (string, error
 		return fileName, nil
 	}
 
-	streamURL := fmt.Sprintf(
-		"%s/stream/%s?key=%s&type=%s&quality=%s",
-		strings.TrimRight(meowApiUrl, "/"),
-		videoID,
-		meowApiKey,
-		downloadType,
-		quality,
-	)
+	streamURL, err := buildMeowStreamURL(videoID, downloadType, quality)
+	if err != nil {
+		return "", err
+	}
 
 	slog.Info("Downloading via Meow API", "video_id", videoID, "type", downloadType)
 
@@ -442,4 +428,23 @@ func (y *youTubeData) downloadWithApi(videoID string, video bool) (string, error
 	}
 
 	return localPath, nil
+}
+
+func buildMeowStreamURL(videoID, downloadType, quality string) (string, error) {
+	if strings.TrimSpace(config.MeowApiUrl) == "" || strings.TrimSpace(config.MeowApiKey) == "" {
+		return "", errors.New("invalid Meow API configuration")
+	}
+
+	baseURL, err := url.Parse(strings.TrimRight(config.MeowApiUrl, "/"))
+	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" {
+		return "", fmt.Errorf("invalid Meow API URL: %q", config.MeowApiUrl)
+	}
+
+	baseURL.Path = strings.TrimRight(baseURL.Path, "/") + "/stream/" + url.PathEscape(videoID)
+	params := baseURL.Query()
+	params.Set("key", config.MeowApiKey)
+	params.Set("type", downloadType)
+	params.Set("quality", quality)
+	baseURL.RawQuery = params.Encode()
+	return baseURL.String(), nil
 }

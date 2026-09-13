@@ -96,6 +96,15 @@
       "description": "API key for external services. Get you own from @FallenApiBot -> /apikey",
       "required": false
     },
+    "MEOW_API_URL": {
+      "description": "Meow API base URL for YouTube media downloads.",
+      "required": false,
+      "value": "https://music.yukiapi.site"
+    },
+    "MEOW_API_KEY": {
+      "description": "Meow API key from @MeowApiRobot.",
+      "required": false
+    },
     "DEFAULT_SERVICE": {
       "description": "Default music download service (e.g., youtube).",
       "required": false,
