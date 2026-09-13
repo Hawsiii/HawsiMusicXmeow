@@ -237,6 +237,10 @@ func (y *youTubeData) resolveLiveStream(videoID string) (string, bool, error) {
 
 // downloadTrack handles the download of a track from YouTube.
 func (y *youTubeData) downloadTrack(info utils.TrackInfo, video bool) (string, error) {
+	if cachedPath := findCachedYouTubeMedia(info.Id, video); cachedPath != "" {
+		return cachedPath, nil
+	}
+
 	if meowApiConfigured() {
 		filePath, err := y.downloadWithApi(info.Id, video)
 		if err != nil {
@@ -252,6 +256,25 @@ func (y *youTubeData) downloadTrack(info utils.TrackInfo, video bool) (string, e
 	}
 
 	return y.downloadWithYtDlp(info.Id, video)
+}
+
+func findCachedYouTubeMedia(videoID string, video bool) string {
+	if videoID == "" {
+		return ""
+	}
+
+	paths, err := filepath.Glob(filepath.Join(config.DownloadsDir, videoID+".*"))
+	if err != nil {
+		return ""
+	}
+
+	for _, path := range paths {
+		if cachedFileUsable(path, video) {
+			return path
+		}
+	}
+
+	return ""
 }
 
 // downloadWithYtDlp downloads media from YouTube using the yt-dlp command-line tool.

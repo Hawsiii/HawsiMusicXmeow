@@ -10,12 +10,28 @@ package dl
 
 import (
 	"ashokshau/tgmusic/src/utils"
+	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
 
 	td "github.com/AshokShau/gotdbot"
 )
 
 func DownloadCachedTrack(cached *utils.CachedTrack, bot *td.Client) (string, error) {
+	if cached == nil {
+		return "", fmt.Errorf("cached track is nil")
+	}
+
+	if cached.FilePath != "" {
+		if cachedFileUsable(cached.FilePath, cached.IsVideo) {
+			return cached.FilePath, nil
+		}
+		cached.FilePath = ""
+	}
+
 	if cached.Platform == utils.DirectLink {
 		return cached.URL, nil
 	}
@@ -29,7 +45,39 @@ func DownloadCachedTrack(cached *utils.CachedTrack, bot *td.Client) (string, err
 		dlBot = DlBot
 	}
 
-	return downloadViaWrapper(cached, dlBot)
+	path, err := downloadViaWrapper(cached, dlBot)
+	if err != nil {
+		return "", err
+	}
+
+	if !isRemoteMediaPath(path) && !cachedFileUsable(path, cached.IsVideo) {
+		return "", fmt.Errorf("downloaded media is invalid: %s", path)
+	}
+
+	cached.FilePath = path
+	return path, nil
+}
+
+func isRemoteMediaPath(path string) bool {
+	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
+}
+
+func cachedFileUsable(filePath string, video bool) bool {
+	info, err := os.Stat(filePath)
+	if err != nil || info.IsDir() || info.Size() == 0 {
+		return false
+	}
+
+	streamType := "a:0"
+	if video {
+		streamType = "v:0"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", streamType,
+		"-show_entries", "stream=codec_type", "-of", "csv=p=0", filePath).Output()
+	return err == nil && strings.TrimSpace(string(output)) != ""
 }
 
 func downloadViaWrapper(cached *utils.CachedTrack, dlBot *td.Client) (string, error) {
