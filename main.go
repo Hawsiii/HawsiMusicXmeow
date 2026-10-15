@@ -63,7 +63,11 @@ func main() {
 		slog.Error("TDLib shared library not found", "pattern", "./libtdjson.so.*", "error", err)
 		os.Exit(1)
 	}
-	libPath := libPaths[0]
+	libPath, err := filepath.Abs(libPaths[0])
+	if err != nil {
+		slog.Error("Failed to resolve TDLib shared library path", "path", libPaths[0], "error", err)
+		os.Exit(1)
+	}
 	manager := gotdbot.NewClientManager(libPath)
 
 	clientConfig := gotdbot.DefaultClientConfig()
