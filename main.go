@@ -58,7 +58,12 @@ func main() {
 	slog.SetDefault(logger)
 	tdDir := "database"
 	_ = os.Remove(tdDir)
-	libPath := "./libtdjson.so.1.8.65"
+	libPaths, err := filepath.Glob("./libtdjson.so.*")
+	if err != nil || len(libPaths) == 0 {
+		slog.Error("TDLib shared library not found", "pattern", "./libtdjson.so.*", "error", err)
+		os.Exit(1)
+	}
+	libPath := libPaths[0]
 	manager := gotdbot.NewClientManager(libPath)
 
 	clientConfig := gotdbot.DefaultClientConfig()
