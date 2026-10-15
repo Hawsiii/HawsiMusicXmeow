@@ -68,21 +68,21 @@ func helpCallbackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if strings.Contains(data, "help_all") {
 		_ = cb.Answer(c, 0, false, "Opening help menu...", "")
 		response := fmt.Sprintf("Hello %s,\n\nI am %s, a fast and powerful music player for Telegram.\n\n<b>Supported platforms:</b> YouTube, Spotify, Apple Music, SoundCloud.\n\nUse the buttons below to explore available commands.", user.FirstName, c.Me.FirstName)
-		_, _ = cb.EditMessageCaption(c, response, &td.EditCaptionOpts{ReplyMarkup: core.HelpMenuKeyboard(), ParseMode: "HTML"})
+		_, _ = cb.EditMessageCaption(c, response, &td.EditMessageCaptionOpts{ReplyMarkup: core.HelpMenuKeyboard(), ParseMode: "HTML"})
 		return nil
 	}
 
 	if strings.Contains(data, "help_back") {
 		_ = cb.Answer(c, 0, false, "Returning to main menu...", "")
 		response := fmt.Sprintf("Hello %s,\n\nI am %s, a fast and powerful music player for Telegram.\n\n<b>Supported platforms:</b> YouTube, Spotify, Apple Music, SoundCloud.\n\nUse the buttons below to explore available commands.", user.FirstName, c.Me.FirstName)
-		_, _ = cb.EditMessageCaption(c, response, &td.EditCaptionOpts{ReplyMarkup: core.AddMeMarkup(c.Me.Usernames.EditableUsername), ParseMode: "HTML"})
+		_, _ = cb.EditMessageCaption(c, response, &td.EditMessageCaptionOpts{ReplyMarkup: core.AddMeMarkup(c.Me.Usernames.EditableUsername), ParseMode: "HTML"})
 		return nil
 	}
 
 	if category, ok := helpCategories[data]; ok {
 		_ = cb.Answer(c, 0, false, category.Title, "")
 		response := fmt.Sprintf("<b>%s</b>\n\n%s\n\n<i>Use the buttons below to go back.</i>", category.Title, category.Content)
-		_, _ = cb.EditMessageCaption(c, response, &td.EditCaptionOpts{ReplyMarkup: category.Markup, ParseMode: "HTML"})
+		_, _ = cb.EditMessageCaption(c, response, &td.EditMessageCaptionOpts{ReplyMarkup: category.Markup, ParseMode: "HTML"})
 		return nil
 	}
 

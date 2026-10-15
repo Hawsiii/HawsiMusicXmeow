@@ -173,7 +173,7 @@ func (c *TelegramCalls) runAutoLeave(bot *td.Client) {
 	logger.Info("AutoLeave: completed", "leftCount", leftCount)
 	if leftCount > 0 && config.LoggerId != 0 {
 		msg := fmt.Sprintf("AutoLeave: Assistant left %d inactive chats", leftCount)
-		if _, err = bot.SendTextMessage(config.LoggerId, msg, nil); err != nil {
+		if _, err = bot.SendMessage(config.LoggerId, msg, nil); err != nil {
 			logger.Error("AutoLeave: failed to send log message", "error", err)
 		}
 	}

@@ -66,7 +66,7 @@ func activeVcHandler(c *td.Client, m *td.Message) error {
 		text = fmt.Sprintf("🎵 <b>Active Voice Chats</b> (%d)", len(activeChats))
 	}
 
-	_, err := m.ReplyText(c, text, &td.SendTextMessageOpts{ParseMode: "HTML", DisableWebPagePreview: true})
+	_, err := m.ReplyText(c, text, &td.SendMessageOpts{ParseMode: "HTML", DisableWebPagePreview: true})
 	if err != nil {
 		return err
 	}

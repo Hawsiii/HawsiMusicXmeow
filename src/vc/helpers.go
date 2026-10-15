@@ -79,7 +79,7 @@ func (c *TelegramCalls) PlayCurrent(bot *td.Client, chatID int64) error {
 // and sending a notification to the chat.
 func (c *TelegramCalls) handleNoSong(bot *td.Client, chatID int64) error {
 	_ = c.Stop(chatID, false)
-	_, _ = bot.SendTextMessage(chatID, "🎵 Hawsi Ka Ghee Khatam... Abhi Kuch Nahi Baj Paa Raha VC Me Hawsi Se...", nil)
+	_, _ = bot.SendMessage(chatID, "🎵 Hawsi Ka Ghee Khatam... Abhi Kuch Nahi Baj Paa Raha VC Me Hawsi Se...", nil)
 	return nil
 }
 

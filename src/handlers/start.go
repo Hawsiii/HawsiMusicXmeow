@@ -41,7 +41,7 @@ func pingHandler(c *td.Client, m *td.Message) error {
 		latency, uptime, runtime.NumGoroutine(),
 	)
 
-	_, err = msg.EditText(c, response, &td.EditTextMessageOpts{ParseMode: "HTML"})
+	_, err = msg.EditText(c, response, &td.EditMessageTextOpts{ParseMode: "HTML"})
 	return err
 }
 
@@ -57,7 +57,6 @@ func startHandler(c *td.Client, m *td.Message) error {
 		response := fmt.Sprintf(
 			"👋 Welcome %s!\n\n🎵 Welcome to Hawsi Music Bot.\n\n➜ Add me to a group.\n➜ Start a voice chat.\n➜ Use /play <song name> to enjoy music.\n\nEnjoy! ❤️",
 			firstName(c, m),
-			c.Me.FirstName,
 		)
 
 		_, err := m.ReplyPhoto(c, td.InputFileRemote{Id: config.StartImg}, &td.SendPhotoOpts{
@@ -82,7 +81,7 @@ func startHandler(c *td.Client, m *td.Message) error {
 		uptime,
 	)
 
-	_, err := m.ReplyText(c, response, &td.SendTextMessageOpts{
+	_, err := m.ReplyText(c, response, &td.SendMessageOpts{
 		ParseMode:             "HTML",
 		DisableWebPagePreview: true,
 		

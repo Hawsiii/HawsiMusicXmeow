@@ -72,7 +72,7 @@ func deletePlaylistHandler(c *td.Client, m *td.Message) error {
 		_, err := m.ReplyText(
 			c,
 			"<b>Usage:</b> /deleteplaylist [playlist id]",
-			&td.SendTextMessageOpts{ParseMode: "HTML"},
+			&td.SendMessageOpts{ParseMode: "HTML"},
 		)
 		return err
 	}
@@ -109,7 +109,7 @@ func deletePlaylistHandler(c *td.Client, m *td.Message) error {
 	_, err = m.ReplyText(
 		c,
 		fmt.Sprintf("Playlist <b>%s</b> has been deleted successfully.", playlist.Name),
-		&td.SendTextMessageOpts{ParseMode: "HTML"},
+		&td.SendMessageOpts{ParseMode: "HTML"},
 	)
 
 	return err
@@ -123,7 +123,7 @@ func addToPlaylistHandler(c *td.Client, m *td.Message) error {
 		_, err := m.ReplyText(
 			c,
 			"<b>Usage:</b> /addtoplaylist [playlist id] [song url]",
-			&td.SendTextMessageOpts{ParseMode: "HTML"},
+			&td.SendMessageOpts{ParseMode: "HTML"},
 		)
 		return err
 	}
@@ -219,7 +219,7 @@ func removeFromPlaylistHandler(c *td.Client, m *td.Message) error {
 		_, err := m.ReplyText(
 			c,
 			"<b>Usage:</b> /removefromplaylist [playlist id] [song number or url]",
-			&td.SendTextMessageOpts{ParseMode: "HTML"},
+			&td.SendMessageOpts{ParseMode: "HTML"},
 		)
 		return err
 	}
@@ -278,7 +278,7 @@ func playlistInfoHandler(c *td.Client, m *td.Message) error {
 		_, err := m.ReplyText(
 			c,
 			"<b>Usage:</b> /playlistinfo [playlist id]",
-			&td.SendTextMessageOpts{ParseMode: "HTML"},
+			&td.SendMessageOpts{ParseMode: "HTML"},
 		)
 		return err
 	}
@@ -308,7 +308,7 @@ func playlistInfoHandler(c *td.Client, m *td.Message) error {
 			len(playlist.Songs),
 			strings.Join(songs, "\n"),
 		),
-		&td.SendTextMessageOpts{ParseMode: "HTML"},
+		&td.SendMessageOpts{ParseMode: "HTML"},
 	)
 	return td.EndGroups
 }
@@ -339,7 +339,7 @@ func myPlaylistsHandler(c *td.Client, m *td.Message) error {
 	_, err = m.ReplyText(
 		c,
 		fmt.Sprintf("<b>My Playlists</b>\n\n%s", strings.Join(playlistInfo, "\n")),
-		&td.SendTextMessageOpts{ParseMode: "HTML"},
+		&td.SendMessageOpts{ParseMode: "HTML"},
 	)
 
 	return err

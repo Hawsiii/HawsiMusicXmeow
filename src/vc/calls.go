@@ -102,7 +102,7 @@ func (c *TelegramCalls) GetGroupAssistant(chatID int64) (*Assistant, int, error)
 // playSong downloads and plays a single song. It sends a message to the chat to indicate the download status
 // and updates it with the song's information once playback begins.
 func (c *TelegramCalls) playSong(bot *td.Client, chatID int64, song *utils.CachedTrack) error {
-	reply, err := bot.SendTextMessage(chatID, fmt.Sprintf("Downloading %s...", song.Name), nil)
+	reply, err := bot.SendMessage(chatID, fmt.Sprintf("Downloading %s...", song.Name), nil)
 	if err != nil {
 		slog.Info("[playSong] Failed to send message", "error", err)
 		return err
@@ -117,7 +117,7 @@ func (c *TelegramCalls) playSong(bot *td.Client, chatID int64, song *utils.Cache
 	}
 
 	if err = c.PlayMedia(bot, chatID, song.FilePath, song.IsVideo, ""); err != nil {
-		_, _ = reply.EditText(bot, err.Error(), &td.EditTextMessageOpts{ParseMode: "HTML", DisableWebPagePreview: true})
+		_, _ = reply.EditText(bot, err.Error(), &td.EditMessageTextOpts{ParseMode: "HTML", DisableWebPagePreview: true})
 		logger.Error("[playSong] Playback failed", "error", err)
 		if nextErr := c.PlayNext(bot, chatID); nextErr != nil {
 			logger.Error("[playSong] Failed to advance after playback failure", "error", nextErr)
@@ -137,7 +137,7 @@ func (c *TelegramCalls) playSong(bot *td.Client, chatID int64, song *utils.Cache
 		html.EscapeString(song.User),
 	)
 
-	_, err = reply.EditText(bot, text, &td.EditTextMessageOpts{
+	_, err = reply.EditText(bot, text, &td.EditMessageTextOpts{
 		ReplyMarkup:           core.ControlButtons("play"),
 		ParseMode:             "HTML",
 		DisableWebPagePreview: true,

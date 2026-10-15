@@ -97,7 +97,7 @@ func main() {
 	}
 
 	handlers.LoadModules(client)
-	_, _ = client.SendTextMessage(config.LoggerId, "The bot has started!", nil)
+	_, _ = client.SendMessage(config.LoggerId, "The bot has started!", nil)
 	manager.Idle()
 	client.Logger.Info("The bot is shutting down...")
 	vc.Calls.StopAllClients()

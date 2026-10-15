@@ -291,13 +291,18 @@ func (y *youTubeData) downloadWithYtDlp(videoID string, video bool) (string, err
 		return path, nil
 	}
 
-	if !strings.Contains(strings.ToLower(err.Error()), "403") {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(ctx.Err(), context.Canceled) {
 		return "", err
 	}
 
 	fallbackParams := y.buildYtdlpFallbackParams(videoID, video)
-	slog.Warn("Retrying yt-dlp after HTTP 403", "video_id", videoID)
-	return runYtDlpDownload(ctx, fallbackParams, videoID, video)
+	slog.Warn("Retrying yt-dlp with fallback formats after download failure", "video_id", videoID, "error", err)
+	fallbackPath, fallbackErr := runYtDlpDownload(ctx, fallbackParams, videoID, video)
+	if fallbackErr != nil {
+		return "", fmt.Errorf("yt-dlp primary attempt failed: %v; fallback attempt failed: %w", err, fallbackErr)
+	}
+
+	return fallbackPath, nil
 }
 
 func runYtDlpDownload(ctx context.Context, params []string, videoID string, video bool) (string, error) {
