@@ -68,15 +68,9 @@ func getMediaDescription(filePath string, isVideo bool, ffmpegParameters string)
 		Fps:         30,
 	}
 
-	var scaleFilter string
-	// Scale to cover the target area then center-crop to 1280x720 so the video fills the frame
-	scaleFilter = fmt.Sprintf(
-		"scale='if(gt(a,%d/%d),-2,%d)':'if(gt(a,%d/%d),%d,-2)':flags=lanczos,crop=%d:%d",
+	scaleFilter := fmt.Sprintf(
+		"scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
 		width,
-		height,
-		width,
-		width,
-		height,
 		height,
 		width,
 		height,
