@@ -94,7 +94,7 @@ cp sample.env .env
 | `API_URL`             |    No    | -                             | Optional API gateway base URL.                                         |
 | `API_KEY`             |    No    | -                             | API gateway key used with `API_URL`.                                   |
 | `MEOW_API_URL`        |    No    | `https://music.yukiapi.site`   | Meow API base URL used for YouTube audio and video downloads.          |
-| `MEOW_API_KEY`        |    No    | -                             | API key for the Meow YouTube download endpoint.                       |
+| `MEOW_API_KEY`        | YouTube | -                             | API key required for YouTube audio and video downloads via Meow API.   |
 | `SESSION_TYPE`        |    No    | `pyrogram`                    | Session string format (`pyrogram` or `telethon`).                      |
 | `DB_NAME`             |    No    | `Anon`                        | Database name inside MongoDB.                                          |
 | `LOGGER_ID`           |    No    | `0`                           | Telegram chat/channel ID where bot startup logs and errors are sent.   |
@@ -119,7 +119,7 @@ cp sample.env .env
 
 <br>
 
-Docker isolates all dependencies (Go 1.26, FFmpeg, yt-dlp, Deno, dynamic libraries) inside a container.
+Docker isolates all dependencies (Go 1.26, FFmpeg, dynamic libraries) inside a container.
 
 #### 1. Install Docker & Docker Compose
 On Ubuntu / Debian:
@@ -182,23 +182,7 @@ docker run -d --name tgmusic --env-file .env --restart unless-stopped tgmusic
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential ffmpeg curl wget unzip git
-```
-
-Install **yt-dlp**:
-
-```bash
-sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
-sudo chmod a+rx /usr/local/bin/yt-dlp
-```
-
-Install **Deno** (required for YouTube download challenges):
-
-```bash
-curl -fsSL https://deno.land/install.sh | sh
-echo 'export DENO_INSTALL="$HOME/.deno"' >> ~/.bashrc
-echo 'export PATH="$DENO_INSTALL/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+sudo apt install -y build-essential ffmpeg wget git
 ```
 
 Install **Go** (1.26 or higher required):

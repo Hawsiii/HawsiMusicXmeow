@@ -55,7 +55,7 @@ func startHandler(c *td.Client, m *td.Message) error {
 				"<h3>Welcome, %s!</h3>\n"+
 				"<p><b>%s</b> is Hawsi Music Bot, letting you play music and video directly in Telegram voice and video chats.</p>\n\n"+
 				"<p><b>Supported platforms:</b> YouTube, Spotify, Apple Music, SoundCloud, Deezer, Twitch, and many more.</p>\n\n"+
-				"<p>Use the buttons below to add the bot to your group or explore the available commands.</p>",
+				"<p>Use the button below to add the bot to your group.</p>",
 			config.StartImg,
 			firstName(c, m),
 			c.Me.FirstName,
@@ -68,7 +68,7 @@ func startHandler(c *td.Client, m *td.Message) error {
 		}
 
 		_, err := m.ReplyRichMessage(c, richMessage, &td.SendMessageOpts{
-			ReplyMarkup: utils.AddMeMarkup(c.Me.Usernames.EditableUsername),
+			ReplyMarkup: utils.StartMarkup(c.Me.Usernames.EditableUsername),
 		})
 
 		return err

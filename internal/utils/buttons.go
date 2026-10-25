@@ -201,21 +201,30 @@ func ControlButtons(mode string) *gotdbot.ReplyMarkupInlineKeyboard {
 }
 
 func AddMeMarkup(username string) *gotdbot.ReplyMarkupInlineKeyboard {
-
-	addMeBtn := url(
-		"Aᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ",
-		fmt.Sprintf("https://t.me/%s?startgroup=true", username),
-		gotdbot.ButtonStylePrimary{},
-	)
-
 	return &gotdbot.ReplyMarkupInlineKeyboard{
 		Rows: [][]gotdbot.InlineKeyboardButton{
-			{addMeBtn},
+			{addMeButton(username)},
 			{HelpBtn},
 			{channelBtn, groupBtn},
 			{SourceCodeBtn},
 		},
 	}
+}
+
+func StartMarkup(username string) *gotdbot.ReplyMarkupInlineKeyboard {
+	return &gotdbot.ReplyMarkupInlineKeyboard{
+		Rows: [][]gotdbot.InlineKeyboardButton{
+			{addMeButton(username)},
+		},
+	}
+}
+
+func addMeButton(username string) gotdbot.InlineKeyboardButton {
+	return url(
+		"Aᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ",
+		fmt.Sprintf("https://t.me/%s?startgroup=true", username),
+		gotdbot.ButtonStylePrimary{},
+	)
 }
 
 func PlayNowButton(trackID string) gotdbot.InlineKeyboardButton {

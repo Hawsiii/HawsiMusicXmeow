@@ -2,6 +2,7 @@ package downloader
 
 import (
 	"ashokshau/tgmusic/internal/config"
+	"ashokshau/tgmusic/internal/utils"
 	"net/url"
 	"strings"
 	"testing"
@@ -32,79 +33,53 @@ func TestBuildMeowStreamURL(t *testing.T) {
 	}
 }
 
-func TestBuildYtdlpParamsDoesNotUseCookieFiles(t *testing.T) {
-	params := (&youTubeData{}).buildYtdlpParams("abc123", false)
+func TestYouTubeDownloadsRequireMeowAPI(t *testing.T) {
+	previousURL, previousKey := config.MeowApiUrl, config.MeowApiKey
+	config.MeowApiUrl, config.MeowApiKey = "", ""
+	t.Cleanup(func() {
+		config.MeowApiUrl, config.MeowApiKey = previousURL, previousKey
+	})
 
-	for i := 0; i < len(params)-1; i++ {
-		if params[i] == "--cookies" {
-			t.Fatalf("expected yt-dlp params to avoid cookies, got %v", params)
+	for _, video := range []bool{false, true} {
+		_, err := newYouTubeData("https://www.youtube.com/watch?v=abc123").downloadTrack(
+			&utils.TrackInfo{Id: "abc123", Platform: utils.YouTube},
+			video,
+		)
+		if err == nil || !strings.Contains(err.Error(), "Meow API is required") {
+			t.Fatalf("downloadTrack(video=%t) error = %v, want missing Meow API error", video, err)
 		}
 	}
 
-	if len(params) == 0 {
-		t.Fatal("expected yt-dlp params to be generated")
-	}
-	if !containsArgPair(params, "--js-runtimes", "deno:/usr/local/bin/deno") {
-		t.Fatalf("expected yt-dlp to use the installed Deno runtime, got %v", params)
-	}
-	if !containsArgPair(params, "--remote-components", "ejs:github") {
-		t.Fatalf("expected yt-dlp to load the YouTube EJS challenge solver, got %v", params)
-	}
-
-	if len(params) < 3 || params[len(params)-3] != "https://www.youtube.com/watch?v=abc123" {
-		t.Fatalf("expected youtube URL near the end of params, got %v", params)
+	_, err := (&apiData{}).downloadTrack(
+		&utils.TrackInfo{
+			Id:       "abc123",
+			CdnURL:   "https://cdn.example.test/video.mp4",
+			Platform: utils.YouTube,
+		},
+		false,
+	)
+	if err == nil || !strings.Contains(err.Error(), "Meow API is required") {
+		t.Fatalf("YouTube API wrapper error = %v, want missing Meow API error instead of CDN fallback", err)
 	}
 }
 
-func TestBuildYtdlpParamsPrefersCombined720pVideo(t *testing.T) {
-	params := (&youTubeData{}).buildYtdlpParams("abc123", true)
-
-	var found bool
-	for i := 0; i < len(params)-1; i++ {
-		if params[i] == "-f" &&
-			strings.Contains(params[i+1], "bestvideo[height<=720]") &&
-			strings.Contains(params[i+1], "+bestaudio") &&
-			strings.Contains(params[i+1], "best[height<=720]") {
-			found = true
-			break
-		}
+func TestParsePositiveDuration(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want float64
+	}{
+		{name: "valid", raw: "12.5", want: 12.5},
+		{name: "zero", raw: "0", want: 0},
+		{name: "negative", raw: "-1", want: 0},
+		{name: "unknown", raw: "N/A", want: 0},
 	}
 
-	if !found {
-		t.Fatalf("expected yt-dlp params to prefer combined video up to 720p, got %v", params)
-	}
-}
-
-func TestBuildYtdlpFallbackParamsBroadensFormatSelection(t *testing.T) {
-	params := (&youTubeData{}).buildYtdlpFallbackParams("abc123", false)
-	joined := strings.Join(params, " ")
-
-	if !strings.Contains(joined, "ba/b") {
-		t.Fatalf("expected fallback audio format, got %v", params)
-	}
-	if !strings.Contains(joined, "youtube:player_client=android,web") {
-		t.Fatalf("expected alternate YouTube clients, got %v", params)
-	}
-}
-
-func TestBuildYtdlpVideoFallbackKeepsAudioAndVideoTogether(t *testing.T) {
-	params := (&youTubeData{}).buildYtdlpFallbackParams("abc123", true)
-	for i := 0; i < len(params)-1; i++ {
-		if params[i] == "-f" {
-			if params[i+1] != "bestvideo[height<=720]+bestaudio/best[height<=720]" {
-				t.Fatalf("expected fallback to select separate or combined A/V capped at 720p, got %q", params[i+1])
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := parsePositiveDuration(test.raw); got != test.want {
+				t.Fatalf("parsePositiveDuration(%q) = %v, want %v", test.raw, got, test.want)
 			}
-			return
-		}
+		})
 	}
-	t.Fatalf("expected a video format selector in fallback params, got %v", params)
-}
-
-func containsArgPair(args []string, name, value string) bool {
-	for i := 0; i+1 < len(args); i++ {
-		if args[i] == name && args[i+1] == value {
-			return true
-		}
-	}
-	return false
 }

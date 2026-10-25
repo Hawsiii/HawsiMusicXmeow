@@ -194,17 +194,12 @@ func (a *apiData) apiRequestWithQueryKey(path string, params url.Values) (*http.
 }
 
 func (a *apiData) downloadTrack(info *utils.TrackInfo, video bool) (string, error) {
-	// if the track is from YouTube and video:true
-	yt := newYouTubeData(a.Query)
-	if info.Platform == utils.YouTube && video {
-		return yt.downloadTrack(info, video)
+	if info.Platform == utils.YouTube {
+		return newYouTubeData(a.Query).downloadTrack(info, video)
 	}
 
 	filePath, err := processDownload(info)
 	if err != nil {
-		if info.Platform == utils.YouTube {
-			return yt.downloadTrack(info, video)
-		}
 		return "", fmt.Errorf("the download process failed: %w", err)
 	}
 

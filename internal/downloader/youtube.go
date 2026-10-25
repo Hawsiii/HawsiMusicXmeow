@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,8 +30,7 @@ const (
 	meowAudioQuality = "128"
 	meowVideoQuality = "720"
 
-	// meowMinValidSize mirrors the Python reference's 10000-byte sanity check
-	// (rejects tiny error/placeholder responses before they hit ffprobe).
+	// Reject tiny error or placeholder responses before probing their media streams.
 	meowMinValidSize = 10000
 )
 
@@ -44,20 +44,6 @@ type youTubeData struct {
 	ApiUrl   string
 	APIKey   string
 	Patterns map[string]*regexp.Regexp
-}
-
-type ytDlpInfo struct {
-	URL       string      `json:"url"`
-	Title     string      `json:"title"`
-	Thumbnail string      `json:"thumbnail"`
-	Duration  float64     `json:"duration"`
-	IsLive    bool        `json:"is_live"`
-	Formats   []ytFormat  `json:"formats"`
-	Entries   []ytDlpInfo `json:"entries"`
-}
-
-type ytFormat struct {
-	URL string `json:"url"`
 }
 
 var youtubePatterns = map[string]*regexp.Regexp{
@@ -213,106 +199,36 @@ func (y *youTubeData) getTrack() (*utils.TrackInfo, error) {
 
 	return trackInfo, nil
 }
-func (y *youTubeData) resolveLiveStream(videoID string) (string, bool, error) {
-	if videoID == "" {
-		return "", false, errors.New("videoID is empty")
-	}
-
-	args := []string{
-		"yt-dlp",
-		"--no-warnings",
-		"--no-playlist",
-		"-J",
-		"https://www.youtube.com/watch?v=" + videoID,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	slog.Info("Running yt-dlp resolver", "args", args)
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-
-	out, err := cmd.Output()
-	if err != nil {
-		return "", false, err
-	}
-
-	var info ytDlpInfo
-	if err := json.Unmarshal(out, &info); err != nil {
-		return "", false, err
-	}
-
-	if len(info.Entries) > 0 {
-		info = info.Entries[0]
-	}
-
-	stream := info.URL
-
-	if stream == "" {
-		for i := len(info.Formats) - 1; i >= 0; i-- {
-			if info.Formats[i].URL != "" {
-				stream = info.Formats[i].URL
-				break
-			}
-		}
-	}
-
-	if stream == "" {
-		return "", false, errors.New("no playable stream found")
-	}
-
-	return stream, info.IsLive, nil
-}
 
 // downloadTrack handles the download of a track from YouTube.
 func (y *youTubeData) downloadTrack(info *utils.TrackInfo, video bool) (string, error) {
-	if video {
-		if meowApiConfigured() {
-			slog.Info("Trying Meow API for YouTube video playback", "video_id", info.Id)
-			filePath, err := y.downloadWithApi(info.Id, true)
-			if err == nil {
-				if err = validateDownloadedMedia(filePath, true); err == nil {
-					return filePath, nil
-				}
-				slog.Warn("Meow API returned invalid video media; falling back to yt-dlp", "video_id", info.Id, "error", err)
-				if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-					slog.Warn("Failed to remove invalid Meow video before fallback", "video_id", info.Id, "path", filePath, "error", removeErr)
-				}
-			} else {
-				slog.Warn("Meow API video download failed; falling back to yt-dlp", "video_id", info.Id, "error", err)
-			}
-		}
-
-		return y.downloadWithYtDlp(info.Id, true)
+	if info == nil || info.Id == "" {
+		return "", errors.New("YouTube video ID is empty")
+	}
+	if !meowApiConfigured() {
+		return "", errors.New("Meow API is required for YouTube downloads; configure MEOW_API_URL and MEOW_API_KEY")
 	}
 
-	if cachedPath := findCachedYouTubeMedia(info.Id, false); cachedPath != "" {
+	if cachedPath := findCachedYouTubeMedia(info.Id, video); cachedPath != "" {
 		return cachedPath, nil
 	}
 
-	if meowApiConfigured() {
-		filePath, err := y.downloadWithApi(info.Id, false)
-		if err == nil {
-			if err = validateDownloadedMedia(filePath, false); err == nil {
-				return filePath, nil
-			}
-			slog.Warn("Meow API returned invalid media", "video_id", info.Id, "error", err)
-		} else {
-			slog.Warn("Meow API download failed", "video_id", info.Id, "error", err)
+	mediaType := "audio"
+	if video {
+		mediaType = "video"
+	}
+	slog.Info("Downloading YouTube media via Meow API", "video_id", info.Id, "type", mediaType)
+	filePath, err := y.downloadWithApi(info.Id, video)
+	if err != nil {
+		return "", err
+	}
+	if err = validateDownloadedMedia(filePath, video); err != nil {
+		if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			slog.Warn("Failed to remove invalid Meow media", "video_id", info.Id, "path", filePath, "error", removeErr)
 		}
+		return "", fmt.Errorf("Meow API returned invalid media: %w", err)
 	}
-
-	if info.CdnURL != "" {
-		return info.CdnURL, nil
-	}
-	if y.ApiUrl != "" && y.APIKey != "" {
-		if filePath, err := y.downloadWithGatewayApi(info.Id); err == nil {
-			return filePath, nil
-		} else {
-			slog.Warn("API gateway download failed", "video_id", info.Id, "error", err)
-		}
-	}
-
-	return y.downloadWithYtDlp(info.Id, false)
+	return filePath, nil
 }
 
 func findCachedYouTubeMedia(videoID string, video bool) string {
@@ -326,91 +242,12 @@ func findCachedYouTubeMedia(videoID string, video bool) string {
 	}
 
 	for _, path := range paths {
-		if cachedFileUsable(path, video) {
+		if validateDownloadedMedia(path, video) == nil {
 			return path
 		}
 	}
 
 	return ""
-}
-
-// downloadWithYtDlp downloads media from YouTube using the yt-dlp command-line tool.
-func (y *youTubeData) downloadWithYtDlp(videoID string, video bool) (string, error) {
-	if videoID == "" {
-		return "", errors.New("videoID is empty")
-	}
-
-	ytdlpParams := y.buildYtdlpParams(videoID, video)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	path, err := runYtDlpDownload(ctx, ytdlpParams, videoID, video)
-	if err == nil {
-		return path, nil
-	}
-
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(ctx.Err(), context.Canceled) {
-		return "", err
-	}
-
-	fallbackParams := y.buildYtdlpFallbackParams(videoID, video)
-	slog.Warn("Retrying yt-dlp with fallback formats after download failure", "video_id", videoID, "error", err)
-	fallbackPath, fallbackErr := runYtDlpDownload(ctx, fallbackParams, videoID, video)
-	if fallbackErr != nil {
-		return "", fmt.Errorf("yt-dlp primary attempt failed: %v; fallback attempt failed: %w", err, fallbackErr)
-	}
-
-	return fallbackPath, nil
-}
-
-func runYtDlpDownload(ctx context.Context, params []string, videoID string, video bool) (string, error) {
-
-	slog.Info("Running yt-dlp", "args", params)
-	cmd := exec.CommandContext(ctx, params[0], params[1:]...)
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			stderr := string(exitErr.Stderr)
-			return "", fmt.Errorf("yt-dlp failed with exit code %d: %s", exitErr.ExitCode(), stderr)
-		}
-
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("yt-dlp timed out for video ID: %s", videoID)
-		}
-
-		return "", fmt.Errorf("an unexpected error occurred while downloading %s: %w", videoID, err)
-	}
-
-	downloadedPathStr := strings.TrimSpace(string(output))
-	if downloadedPathStr == "" {
-		return "", fmt.Errorf("no output path was returned for %s", videoID)
-	}
-
-	if _, err := os.Stat(downloadedPathStr); err != nil {
-		return "", fmt.Errorf("downloaded file is unavailable at %s: %w", downloadedPathStr, err)
-	}
-
-	if err := validateDownloadedMedia(downloadedPathStr, video); err != nil {
-		return "", err
-	}
-
-	return downloadedPathStr, nil
-}
-
-func (y *youTubeData) buildYtdlpFallbackParams(videoID string, video bool) []string {
-	params := y.buildYtdlpParams(videoID, video)
-	for index := range params {
-		if params[index] == "-f" && index+1 < len(params) {
-			if video {
-				params[index+1] = "bestvideo[height<=720]+bestaudio/best[height<=720]"
-			} else {
-				params[index+1] = "ba/b"
-			}
-			break
-		}
-	}
-	params = append(params, "--extractor-args", "youtube:player_client=android,web")
-	return params
 }
 
 func validateDownloadedMedia(filePath string, video bool) error {
@@ -429,7 +266,7 @@ func validateDownloadedMedia(filePath string, video bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error",
-		"-show_entries", "stream=codec_type", "-of", "csv=p=0", filePath)
+		"-show_entries", "format=duration:stream=codec_type,duration", "-of", "json", filePath)
 	output, err := cmd.Output()
 	if err != nil || strings.TrimSpace(string(output)) == "" {
 		if ctx.Err() != nil {
@@ -438,70 +275,44 @@ func validateDownloadedMedia(filePath string, video bool) error {
 		return fmt.Errorf("downloaded media is invalid or incomplete: %s", filePath)
 	}
 
-	streams := strings.Fields(string(output))
+	var probe struct {
+		Streams []struct {
+			CodecType string `json:"codec_type"`
+			Duration  string `json:"duration"`
+		} `json:"streams"`
+		Format struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(output, &probe); err != nil {
+		return fmt.Errorf("failed to parse downloaded media probe: %w", err)
+	}
+
 	hasAudio, hasVideo := false, false
-	for _, stream := range streams {
-		hasAudio = hasAudio || stream == "audio"
-		hasVideo = hasVideo || stream == "video"
+	duration := parsePositiveDuration(probe.Format.Duration)
+	for _, stream := range probe.Streams {
+		hasAudio = hasAudio || stream.CodecType == "audio"
+		hasVideo = hasVideo || stream.CodecType == "video"
+		if streamDuration := parsePositiveDuration(stream.Duration); streamDuration > duration {
+			duration = streamDuration
+		}
 	}
 	if !hasAudio || (video && !hasVideo) {
 		return fmt.Errorf("downloaded media is missing required streams (audio=%t, video=%t): %s", hasAudio, hasVideo, filePath)
+	}
+	if duration <= 0 {
+		return fmt.Errorf("downloaded media has no playable duration: %s", filePath)
 	}
 
 	return nil
 }
 
-func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
-	outputTemplate := filepath.Join(config.DownloadsDir, "%(id)s.%(ext)s")
-
-	params := []string{
-		"yt-dlp",
-		"--no-warnings",
-		"--quiet",
-		"--geo-bypass",
-		"--js-runtimes", "deno:/usr/local/bin/deno",
-		"--remote-components", "ejs:github",
-		"--retries", "2",
-		"--no-continue",
-		"--force-overwrites",
-		"--concurrent-fragments", "3",
-		"--socket-timeout", "10",
-		"--throttled-rate", "100K",
-		"--retry-sleep", "1",
-		"--no-write-thumbnail",
-		"--no-write-info-json",
-		"--no-embed-metadata",
-		"--no-embed-chapters",
-		"--no-embed-subs",
-		"-o", outputTemplate,
+func parsePositiveDuration(raw string) float64 {
+	duration, err := strconv.ParseFloat(raw, 64)
+	if err != nil || duration <= 0 {
+		return 0
 	}
-
-	if video {
-		params = append(params,
-			"-f",
-			"bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]",
-			"--merge-output-format",
-			"mp4",
-		)
-	} else {
-		params = append(params,
-			"-f",
-			"bestaudio[ext=m4a]/bestaudio",
-		)
-	}
-
-	if config.Proxy != "" {
-		params = append(params, "--proxy", config.Proxy)
-	}
-
-	params = append(
-		params,
-		"https://www.youtube.com/watch?v="+videoID,
-		"--print",
-		"after_move:filepath",
-	)
-
-	return params
+	return duration
 }
 
 // downloadWithApi downloads a track from Meow's direct stream endpoint.
@@ -525,9 +336,12 @@ func (y *youTubeData) downloadWithApi(videoID string, video bool) (string, error
 
 	fileName := filepath.Join(config.DownloadsDir, videoID+ext)
 
-	// Reuse an already-downloaded file if it looks valid, same as the Python cache check.
 	if fi, err := os.Stat(fileName); err == nil && fi.Size() > meowMinValidSize {
-		return fileName, nil
+		if err := validateDownloadedMedia(fileName, video); err == nil {
+			return fileName, nil
+		} else {
+			slog.Warn("Cached Meow media is invalid; downloading a fresh copy", "video_id", videoID, "error", err)
+		}
 	}
 
 	streamURL, err := buildMeowStreamURL(videoID, downloadType, quality)
@@ -570,15 +384,6 @@ func buildMeowStreamURL(videoID, downloadType, quality string) (string, error) {
 	params.Set("quality", quality)
 	baseURL.RawQuery = params.Encode()
 	return baseURL.String(), nil
-}
-
-func (y *youTubeData) downloadWithGatewayApi(videoID string) (string, error) {
-	videoURL := "https://www.youtube.com/watch?v=" + videoID
-	track, err := newApiData(videoURL).getTrack()
-	if err != nil {
-		return "", err
-	}
-	return processDownload(track)
 }
 
 // getRecommendations retrieves native YouTube mix recommendations without external API.
