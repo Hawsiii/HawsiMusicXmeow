@@ -10,12 +10,16 @@ package calls
 
 import (
 	"ashokshau/tgmusic/ntgcalls"
+	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
+	"os/exec"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var urlRegex = regexp.MustCompile(`^https?://`)
@@ -71,8 +75,12 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 		}
 	}
 
-	width := 1280
-	height := 720
+	width, height := 1280, 720
+	if !isURL {
+		if sourceWidth, sourceHeight := getVideoDimensions(filePath); sourceWidth > 0 && sourceHeight > 0 {
+			width, height = fitVideoDimensions(sourceWidth, sourceHeight, width, height)
+		}
+	}
 
 	videoDescription := &ntgcalls.VideoDescription{
 		MediaSource: ntgcalls.MediaSourceShell,
@@ -151,4 +159,40 @@ func shouldPaceInput(input string) bool {
 	default:
 		return true
 	}
+}
+
+func fitVideoDimensions(sourceWidth, sourceHeight, maxWidth, maxHeight int) (int, int) {
+	scale := min(1, float64(maxWidth)/float64(sourceWidth), float64(maxHeight)/float64(sourceHeight))
+	width := int(float64(sourceWidth) * scale)
+	height := int(float64(sourceHeight) * scale)
+	width -= width % 2
+	height -= height % 2
+	return max(width, 2), max(height, 2)
+}
+
+func getVideoDimensions(filePath string) (int, int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	output, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", filePath).Output()
+	if err != nil {
+		slog.Warn("Failed to probe video dimensions", "path", filePath, "error", err)
+		return 0, 0
+	}
+
+	dimensions := strings.Split(strings.TrimSpace(string(output)), "x")
+	if len(dimensions) != 2 {
+		slog.Warn("Invalid video dimensions from ffprobe", "path", filePath, "output", strings.TrimSpace(string(output)))
+		return 0, 0
+	}
+
+	width, widthErr := strconv.Atoi(dimensions[0])
+	height, heightErr := strconv.Atoi(dimensions[1])
+	if widthErr != nil || heightErr != nil || width <= 0 || height <= 0 {
+		slog.Warn("Invalid video dimensions from ffprobe", "path", filePath, "output", strings.TrimSpace(string(output)))
+		return 0, 0
+	}
+
+	return width, height
 }

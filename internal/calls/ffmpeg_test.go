@@ -10,13 +10,38 @@ func TestGetMediaDescriptionUsesSharpVideoScaling(t *testing.T) {
 	if description.Camera == nil ||
 		!strings.Contains(description.Camera.Input, "ffmpeg -hide_banner -re -i ") ||
 		!strings.Contains(description.Camera.Input, "flags=lanczos") ||
-		!strings.Contains(description.Camera.Input, "scale=1280:720:force_original_aspect_ratio=decrease") ||
-		!strings.Contains(description.Camera.Input, "pad=1280:720") ||
+		!strings.Contains(description.Camera.Input, "scale=") ||
+		!strings.Contains(description.Camera.Input, "pad=") ||
 		strings.Contains(description.Camera.Input, "crop=") {
 		t.Fatalf("expected local video input to be paced and scaled, got %#v", description.Camera)
 	}
 	if description.Microphone == nil || !strings.Contains(description.Microphone.Input, "ffmpeg -re -i ") {
 		t.Fatalf("expected local audio input to be paced, got %#v", description.Microphone)
+	}
+}
+
+func TestFitVideoDimensionsPreservesSourceResolution(t *testing.T) {
+	tests := []struct {
+		name                  string
+		sourceWidth           int
+		sourceHeight          int
+		wantWidth, wantHeight int
+	}{
+		{"720p source", 1280, 720, 1280, 720},
+		{"480p source", 854, 480, 854, 480},
+		{"larger source", 1920, 1080, 1280, 720},
+		{"portrait source", 1080, 1920, 404, 720},
+		{"odd source", 641, 361, 640, 360},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			width, height := fitVideoDimensions(test.sourceWidth, test.sourceHeight, 1280, 720)
+			if width != test.wantWidth || height != test.wantHeight {
+				t.Fatalf("fitVideoDimensions(%d, %d) = %dx%d, want %dx%d",
+					test.sourceWidth, test.sourceHeight, width, height, test.wantWidth, test.wantHeight)
+			}
+		})
 	}
 }
 
