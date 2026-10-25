@@ -65,9 +65,8 @@ var client = &http.Client{
 }
 
 var downloadClient = &http.Client{
-	Timeout:       downloadTimeout,
-	Transport:     client.Transport,
-	CheckRedirect: client.CheckRedirect,
+	Timeout:   downloadTimeout,
+	Transport: client.Transport,
 }
 
 func sendRequest(method, fullURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
