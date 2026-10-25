@@ -73,7 +73,9 @@ func adminMode(c *td.Client, m *td.Message) bool {
 	case utils.Everyone:
 		return true
 	case utils.Admins:
-		if db.Instance.IsAdmin(chatID, userID) || db.Instance.IsAuthUser(chatID, userID) {
+		if db.Instance.IsAdmin(chatID, userID) ||
+			db.Instance.IsAuthUser(chatID, userID) ||
+			isAnonymousAdminSender(c, chatID, m.SenderId) {
 			return true
 		}
 		_, _ = m.ReplyText(c, "Teri Aukat Nahi Hai Yeh Karne Ki... Bas Hawsi Log Yeh Karr Sakte Hai...", nil)
@@ -82,6 +84,41 @@ func adminMode(c *td.Client, m *td.Message) bool {
 		_, _ = m.ReplyText(c, "Teri Aukat Nahi Hai Yeh Karne Ki... Bas Hawsi Log Yeh Karr Sakte Hai... ", nil)
 		return false
 	}
+}
+
+func isAnonymousAdminSender(c *td.Client, chatID int64, sender td.MessageSender) bool {
+	admins, err := cache.GetAdmins(c, chatID, false)
+	if err != nil {
+		c.Logger.Warn("failed to verify anonymous administrator", "chat_id", chatID, "error", err)
+		return false
+	}
+	return isAnonymousAdminMemberSender(chatID, sender, admins)
+}
+
+func isAnonymousAdminMemberSender(chatID int64, sender td.MessageSender, admins []*td.ChatMember) bool {
+	senderChatID := int64(0)
+	switch value := sender.(type) {
+	case td.MessageSenderChat:
+		senderChatID = value.ChatId
+	case *td.MessageSenderChat:
+		if value != nil {
+			senderChatID = value.ChatId
+		}
+	}
+	if senderChatID != chatID {
+		return false
+	}
+
+	for _, member := range admins {
+		if member == nil {
+			continue
+		}
+		status, ok := member.Status.(*td.ChatMemberStatusAdministrator)
+		if ok && status.Rights != nil && status.Rights.IsAnonymous {
+			return true
+		}
+	}
+	return false
 }
 
 func adminModeCB(c *td.Client, cb *td.UpdateNewCallbackQuery) bool {
@@ -134,7 +171,7 @@ func playMode(c *td.Client, m *td.Message) bool {
 		senderID := m.SenderID()
 		admin := slices.ContainsFunc(admins, func(a *td.ChatMember) bool {
 			return SenderID(a.MemberId) == senderID
-		})
+		}) || isAnonymousAdminSender(c, chatID, m.SenderId)
 		if !admin && !db.Instance.IsAuthUser(chatID, senderID) {
 			_, _ = m.ReplyText(c, "Play mode is enabled. Only administrators and authorized users can start playback.", nil)
 			return false

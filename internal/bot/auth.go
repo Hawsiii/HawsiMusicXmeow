@@ -21,6 +21,9 @@ func requireAdmin(c *td.Client, m *td.Message) bool {
 	if m.IsPrivate() {
 		return false
 	}
+	if isAnonymousAdminSender(c, m.ChatId, m.SenderId) {
+		return true
+	}
 
 	status, err := cache.GetUserAdmin(c, m.ChatId, m.SenderID(), false)
 	if err != nil {

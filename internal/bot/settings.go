@@ -34,9 +34,11 @@ func settingsHandler(c *td.Client, m *td.Message) error {
 
 	deleteCmd(c, m)
 
-	if accessErr := cache.SettingsAccess(c, chatID, m.SenderID(), "main"); accessErr != nil {
-		_, _ = m.ReplyText(c, accessErr.Error(), nil)
-		return td.EndGroups
+	if !isAnonymousAdminSender(c, chatID, m.SenderId) {
+		if accessErr := cache.SettingsAccess(c, chatID, m.SenderID(), "main"); accessErr != nil {
+			_, _ = m.ReplyText(c, accessErr.Error(), nil)
+			return td.EndGroups
+		}
 	}
 	if _, err := db.Instance.GetCleanSettings(chatID); err != nil {
 		_, _ = m.ReplyText(c, "Unable to load settings. Please try again later.", nil)
