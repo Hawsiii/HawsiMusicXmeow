@@ -8,11 +8,24 @@ import (
 func TestGetMediaDescriptionUsesSharpVideoScaling(t *testing.T) {
 	description := getMediaDescription("sample.mp4", true, 0, "")
 	if description.Camera == nil ||
+		!strings.Contains(description.Camera.Input, "ffmpeg -hide_banner -re -i ") ||
 		!strings.Contains(description.Camera.Input, "flags=lanczos") ||
 		!strings.Contains(description.Camera.Input, "scale=1280:720:force_original_aspect_ratio=decrease") ||
 		!strings.Contains(description.Camera.Input, "pad=1280:720") ||
 		strings.Contains(description.Camera.Input, "crop=") {
-		t.Fatalf("expected video input to use Lanczos scaling, got %#v", description.Camera)
+		t.Fatalf("expected local video input to be paced and scaled, got %#v", description.Camera)
+	}
+	if description.Microphone == nil || !strings.Contains(description.Microphone.Input, "ffmpeg -re -i ") {
+		t.Fatalf("expected local audio input to be paced, got %#v", description.Microphone)
+	}
+}
+
+func TestGetMediaDescriptionDoesNotRateLimitRemoteStreams(t *testing.T) {
+	description := getMediaDescription("https://example.com/video.mp4", true, 0, "")
+	if description.Camera == nil ||
+		!strings.Contains(description.Camera.Input, "-reconnect 1") ||
+		strings.Contains(description.Camera.Input, " -re -i ") {
+		t.Fatalf("expected remote video stream to reconnect without file pacing, got %#v", description.Camera)
 	}
 }
 
