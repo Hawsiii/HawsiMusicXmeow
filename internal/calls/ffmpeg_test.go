@@ -20,12 +20,25 @@ func TestGetMediaDescriptionUsesSharpVideoScaling(t *testing.T) {
 	}
 }
 
-func TestGetMediaDescriptionDoesNotRateLimitRemoteStreams(t *testing.T) {
+func TestGetMediaDescriptionPacesDirectVideoURLs(t *testing.T) {
 	description := getMediaDescription("https://example.com/video.mp4", true, 0, "")
 	if description.Camera == nil ||
 		!strings.Contains(description.Camera.Input, "-reconnect 1") ||
-		strings.Contains(description.Camera.Input, " -re -i ") {
-		t.Fatalf("expected remote video stream to reconnect without file pacing, got %#v", description.Camera)
+		!strings.Contains(description.Camera.Input, " -re -i ") {
+		t.Fatalf("expected direct remote video input to reconnect and be paced, got %#v", description.Camera)
+	}
+
+	googleVideoURL := "https://video-downloads.googleusercontent.com/opaque-signed-id?expire=123"
+	description = getMediaDescription(googleVideoURL, true, 0, "")
+	if description.Camera == nil || !strings.Contains(description.Camera.Input, " -re -i ") {
+		t.Fatalf("expected extensionless signed video URL to be paced, got %#v", description.Camera)
+	}
+
+	manifest := getMediaDescription("https://example.com/live.m3u8?token=example", true, 0, "")
+	if manifest.Camera == nil ||
+		!strings.Contains(manifest.Camera.Input, "-reconnect 1") ||
+		strings.Contains(manifest.Camera.Input, " -re -i ") {
+		t.Fatalf("expected live manifest input to reconnect without file pacing, got %#v", manifest.Camera)
 	}
 }
 

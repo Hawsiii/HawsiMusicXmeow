@@ -11,6 +11,8 @@ package calls
 import (
 	"ashokshau/tgmusic/ntgcalls"
 	"fmt"
+	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -33,7 +35,8 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 	audioCmd.WriteString("ffmpeg ")
 	if isURL {
 		audioCmd.WriteString("-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 2 ")
-	} else {
+	}
+	if shouldPaceInput(filePath) {
 		audioCmd.WriteString("-re ")
 	}
 
@@ -91,7 +94,8 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 
 	if isURL {
 		videoCmd.WriteString("-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 2 ")
-	} else {
+	}
+	if shouldPaceInput(filePath) {
 		videoCmd.WriteString("-re ")
 	}
 
@@ -129,4 +133,22 @@ func splitFilterFlags(filterFlags string) (videoFilter, audioFilter string) {
 		}
 	}
 	return videoFilter, audioFilter
+}
+
+func shouldPaceInput(input string) bool {
+	if !urlRegex.MatchString(input) {
+		return true
+	}
+
+	parsed, err := url.Parse(input)
+	if err != nil {
+		return true
+	}
+
+	switch strings.ToLower(path.Ext(parsed.Path)) {
+	case ".m3u", ".m3u8", ".mpd":
+		return false
+	default:
+		return true
+	}
 }
