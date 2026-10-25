@@ -95,7 +95,7 @@ func (y *youTubeData) getInfo() (*utils.PlatformTracks, error) {
 		return nil, errors.New("the provided URL is invalid or the platform is not supported")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	y.Query = normalizeYouTubeURL(y.Query)
@@ -110,8 +110,13 @@ func (y *youTubeData) getInfo() (*utils.PlatformTracks, error) {
 		return getYouTubePlaylist(ctx, playlistID)
 
 	case videoID != "":
+		video, playerErr := getYouTubeVideo(ctx, videoID)
+		if playerErr == nil {
+			return video, nil
+		}
+
 		for _, query := range []string{videoID, y.Query} {
-			tracks, err := searchYouTube(query, 10)
+			tracks, err := searchYouTube(query, 10, ctx)
 			if err != nil {
 				continue
 			}
@@ -123,19 +128,26 @@ func (y *youTubeData) getInfo() (*utils.PlatformTracks, error) {
 			}
 		}
 
-		if title, err := getYouTubeTitleFromOEmbed(videoID); err == nil && title != "" {
-			tracks, err := searchYouTube(title, 10)
-			if err == nil {
-				for _, track := range tracks {
-					if track.Id == videoID {
-						return &utils.PlatformTracks{Results: []utils.GetUrlTrack{track}}, nil
+		if ctx.Err() == nil {
+			if title, err := getYouTubeTitleFromOEmbed(ctx, videoID); err == nil && title != "" {
+				tracks, err := searchYouTube(title, 10, ctx)
+				if err == nil {
+					for _, track := range tracks {
+						if track.Id == videoID {
+							return &utils.PlatformTracks{Results: []utils.GetUrlTrack{track}}, nil
+						}
 					}
 				}
 			}
 		}
 
-		slog.Warn("Video ID was extracted but no matching track was found in search results", "video_id", videoID)
-		return getYouTubeVideo(ctx, videoID)
+		slog.Warn("YouTube metadata lookup failed; continuing with the video URL", "video_id", videoID, "error", playerErr)
+		return &utils.PlatformTracks{Results: []utils.GetUrlTrack{{
+			Id:       videoID,
+			Url:      ytWatchURL + videoID,
+			Title:    videoID,
+			Platform: utils.YouTube,
+		}}}, nil
 	}
 
 	return nil, errors.New("no video or playlist results were found")

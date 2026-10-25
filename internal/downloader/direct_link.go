@@ -39,11 +39,14 @@ func (d *directLink) getInfo() (*utils.PlatformTracks, error) {
 		return nil, errors.New("invalid url")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffprobe",
-		"-v", "quiet",
+		"-v", "error",
+		"-rw_timeout", "20000000",
+		"-analyzeduration", "10000000",
+		"-probesize", "10000000",
 		"-print_format", "json",
 		"-show_format",
 		d.query,
@@ -51,12 +54,32 @@ func (d *directLink) getInfo() (*utils.PlatformTracks, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("invalid or unplayable link: %w", err)
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			if !isDeferredProbeURL(d.query) {
+				return nil, fmt.Errorf("timed out probing direct media link")
+			}
+		}
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && !isDeferredProbeURL(d.query) {
+			details := strings.TrimSpace(string(exitErr.Stderr))
+			details = strings.ReplaceAll(details, d.query, "[URL]")
+			if len(details) > 500 {
+				details = details[:500] + "..."
+			}
+			if details != "" {
+				return nil, fmt.Errorf("invalid or unplayable link (ffprobe exit code %d): %s", exitErr.ExitCode(), details)
+			}
+			return nil, fmt.Errorf("invalid or unplayable link (ffprobe exit code %d)", exitErr.ExitCode())
+		}
+		if !isDeferredProbeURL(d.query) {
+			return nil, fmt.Errorf("invalid or unplayable link: %w", err)
+		}
 	}
 
 	var info utils.FFProbeFormat
-	if err = json.Unmarshal(output, &info); err != nil {
-		return nil, fmt.Errorf("failed to parse ffprobe output: %w", err)
+	if len(output) > 0 {
+		if err = json.Unmarshal(output, &info); err != nil {
+			return nil, fmt.Errorf("failed to parse ffprobe output: %w", err)
+		}
 	}
 
 	var duration int32
@@ -68,13 +91,7 @@ func (d *directLink) getInfo() (*utils.PlatformTracks, error) {
 
 	title := info.Format.Tags.Title
 	if title == "" {
-		parts := strings.Split(d.query, "/")
-		if len(parts) > 0 {
-			title = parts[len(parts)-1]
-			title = strings.SplitN(title, "?", 2)[0]
-			title = strings.SplitN(title, "#", 2)[0]
-			title, _ = url.QueryUnescape(title)
-		}
+		title = directLinkTitle(d.query)
 		if title == "" {
 			title = "Direct Link"
 		}
@@ -120,12 +137,42 @@ func (d *directLink) getTrack() (*utils.TrackInfo, error) {
 }
 
 func (d *directLink) downloadTrack(_ *utils.TrackInfo, _ bool) (string, error) {
+	if isDeferredProbeURL(d.query) {
+		return d.query, nil
+	}
+
 	localPath, err := downloadFile(d.query, "", false)
 	if err != nil {
 		slog.Warn("Direct link download failed, falling back to remote stream", "url", d.query, "error", err)
 		return d.query, nil
 	}
 	return localPath, nil
+}
+
+func isDeferredProbeURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+	return host == "googleusercontent.com" || strings.HasSuffix(host, ".googleusercontent.com")
+}
+
+func directLinkTitle(rawURL string) string {
+	if isDeferredProbeURL(rawURL) {
+		return "Google video"
+	}
+
+	parts := strings.Split(rawURL, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	title := parts[len(parts)-1]
+	title = strings.SplitN(title, "?", 2)[0]
+	title = strings.SplitN(title, "#", 2)[0]
+	title, _ = url.QueryUnescape(title)
+	return title
 }
 
 func (d *directLink) getRecommendations(_ context.Context, _ string) (*utils.PlatformTracks, error) {
