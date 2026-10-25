@@ -384,7 +384,7 @@ func (y *youTubeData) buildYtdlpFallbackParams(videoID string, video bool) []str
 	for index := range params {
 		if params[index] == "-f" && index+1 < len(params) {
 			if video {
-				params[index+1] = "best[height<=720]"
+				params[index+1] = "bestvideo[height<=720]+bestaudio/best[height<=720]"
 			} else {
 				params[index+1] = "ba/b"
 			}
@@ -441,6 +441,8 @@ func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
 		"--no-warnings",
 		"--quiet",
 		"--geo-bypass",
+		"--js-runtimes", "deno:/usr/local/bin/deno",
+		"--remote-components", "ejs:github",
 		"--retries", "2",
 		"--no-continue",
 		"--force-overwrites",
@@ -459,7 +461,9 @@ func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
 	if video {
 		params = append(params,
 			"-f",
-			"best[height<=720][ext=mp4]/best[height<=720]",
+			"bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]",
+			"--merge-output-format",
+			"mp4",
 		)
 	} else {
 		params = append(params,

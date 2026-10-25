@@ -44,6 +44,12 @@ func TestBuildYtdlpParamsDoesNotUseCookieFiles(t *testing.T) {
 	if len(params) == 0 {
 		t.Fatal("expected yt-dlp params to be generated")
 	}
+	if !containsArgPair(params, "--js-runtimes", "deno:/usr/local/bin/deno") {
+		t.Fatalf("expected yt-dlp to use the installed Deno runtime, got %v", params)
+	}
+	if !containsArgPair(params, "--remote-components", "ejs:github") {
+		t.Fatalf("expected yt-dlp to load the YouTube EJS challenge solver, got %v", params)
+	}
 
 	if len(params) < 3 || params[len(params)-3] != "https://www.youtube.com/watch?v=abc123" {
 		t.Fatalf("expected youtube URL near the end of params, got %v", params)
@@ -55,7 +61,10 @@ func TestBuildYtdlpParamsPrefersCombined720pVideo(t *testing.T) {
 
 	var found bool
 	for i := 0; i < len(params)-1; i++ {
-		if params[i] == "-f" && strings.Contains(params[i+1], "best[height<=720]") {
+		if params[i] == "-f" &&
+			strings.Contains(params[i+1], "bestvideo[height<=720]") &&
+			strings.Contains(params[i+1], "+bestaudio") &&
+			strings.Contains(params[i+1], "best[height<=720]") {
 			found = true
 			break
 		}
@@ -82,11 +91,20 @@ func TestBuildYtdlpVideoFallbackKeepsAudioAndVideoTogether(t *testing.T) {
 	params := (&youTubeData{}).buildYtdlpFallbackParams("abc123", true)
 	for i := 0; i < len(params)-1; i++ {
 		if params[i] == "-f" {
-			if params[i+1] != "best[height<=720]" {
-				t.Fatalf("expected fallback to select a combined format capped at 720p, got %q", params[i+1])
+			if params[i+1] != "bestvideo[height<=720]+bestaudio/best[height<=720]" {
+				t.Fatalf("expected fallback to select separate or combined A/V capped at 720p, got %q", params[i+1])
 			}
 			return
 		}
 	}
 	t.Fatalf("expected a video format selector in fallback params, got %v", params)
+}
+
+func containsArgPair(args []string, name, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == name && args[i+1] == value {
+			return true
+		}
+	}
+	return false
 }
