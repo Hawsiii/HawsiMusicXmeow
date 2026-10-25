@@ -76,7 +76,7 @@ func playCallbackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			return nil
 		}
 
-		msg := fmt.Sprintf("<b>Playback stopped.</b>\nRequested by: %s", html.EscapeString(user.FirstName))
+		msg := fmt.Sprintf("<b>Ek Hawsi Ke Taraf Se Roka Gaya Hai.</b>\nRequested by: %s", html.EscapeString(user.FirstName))
 		_ = cb.Answer(c, "Playback stopped.", nil)
 		_, err := cb.EditMessageText(c, msg, &td.EditMessageTextOpts{ReplyMarkup: utils.ControlButtons(""), ParseMode: "HTML", DisableWebPagePreview: true})
 		return err
@@ -88,7 +88,7 @@ func playCallbackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			return nil
 		}
 		_ = cb.Answer(c, "Playback paused.", nil)
-		text := buildTrackMessage("Paused", "⏸") + fmt.Sprintf("\n\nPaused by %s", html.EscapeString(user.FirstName))
+		text := buildTrackMessage("Roka Gaya Hai...", "⏸") + fmt.Sprintf("\n\nRoka Gaya Hai... %s", html.EscapeString(user.FirstName))
 		_, _ = cb.EditMessageText(c, text, &td.EditMessageTextOpts{ReplyMarkup: utils.ControlButtons("pause"), ParseMode: "HTML", DisableWebPagePreview: true})
 		return nil
 
@@ -99,7 +99,7 @@ func playCallbackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			return nil
 		}
 		_ = cb.Answer(c, "Playback resumed.", nil)
-		text := buildTrackMessage("Now Playing", "▶") + fmt.Sprintf("\n\nResumed by %s", html.EscapeString(user.FirstName))
+		text := buildTrackMessage("Abhi Ye Chal Raha Hai...", "▶") + fmt.Sprintf("\n\nIsh Hawsi Ne Shuru Kia... %s", html.EscapeString(user.FirstName))
 		_, _ = cb.EditMessageText(c, text, &td.EditMessageTextOpts{ReplyMarkup: utils.ControlButtons("resume"), ParseMode: "HTML", DisableWebPagePreview: true})
 		return nil
 
@@ -110,7 +110,7 @@ func playCallbackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			return nil
 		}
 		_ = cb.Answer(c, "Playback muted.", nil)
-		text := buildTrackMessage("Muted", "🔇") + fmt.Sprintf("\n\nMuted by %s", html.EscapeString(user.FirstName))
+		text := buildTrackMessage("Hawsi Ka Muh Band Hai", "🔇") + fmt.Sprintf("\n\nMuted by %s", html.EscapeString(user.FirstName))
 		_, _ = cb.EditMessageText(c, text, &td.EditMessageTextOpts{ReplyMarkup: utils.ControlButtons("mute"), ParseMode: "HTML", DisableWebPagePreview: true})
 		return nil
 
@@ -121,7 +121,7 @@ func playCallbackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			return nil
 		}
 		_ = cb.Answer(c, "Playback unmuted.", nil)
-		text := buildTrackMessage("Now Playing", "▶") + fmt.Sprintf("\n\nUnmuted by %s", html.EscapeString(user.FirstName))
+		text := buildTrackMessage("Abhi Ye Chal Raha Hai...", "▶") + fmt.Sprintf("\n\nUnmuted by %s", html.EscapeString(user.FirstName))
 		_, _ = cb.EditMessageText(c, text, &td.EditMessageTextOpts{ReplyMarkup: utils.ControlButtons("unmute"), DisableWebPagePreview: true})
 		return nil
 
@@ -192,7 +192,7 @@ func playCallbackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		return nil
 	}
 
-	text := buildTrackMessage("Now Playing", "▶")
+	text := buildTrackMessage("Abhi Yeh Chal Raha Hai...", "▶")
 	_, _ = cb.EditMessageText(c, text, &td.EditMessageTextOpts{ReplyMarkup: utils.ControlButtons("resume"), ParseMode: "HTML", DisableWebPagePreview: true})
 	return nil
 }
