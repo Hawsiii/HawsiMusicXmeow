@@ -124,7 +124,7 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 
 	return ntgcalls.MediaDescription{
 		Microphone: audioDescription,
-		Screen:     videoDescription,
+		Camera:     videoDescription,
 	}
 }
 
