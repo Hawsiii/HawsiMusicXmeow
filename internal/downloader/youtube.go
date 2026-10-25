@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -291,13 +290,9 @@ func validateDownloadedMedia(filePath string, video bool) error {
 
 	hasAudio, hasVideo := false, false
 	duration := parsePositiveDuration(probe.Format.Duration)
-	videoDuration := 0.0
 	for _, stream := range probe.Streams {
 		hasAudio = hasAudio || stream.CodecType == "audio"
 		hasVideo = hasVideo || stream.CodecType == "video"
-		if streamDuration := parsePositiveDuration(stream.Duration); stream.CodecType == "video" && streamDuration > videoDuration {
-			videoDuration = streamDuration
-		}
 		if streamDuration := parsePositiveDuration(stream.Duration); streamDuration > duration {
 			duration = streamDuration
 		}
@@ -308,109 +303,8 @@ func validateDownloadedMedia(filePath string, video bool) error {
 	if duration <= 0 {
 		return fmt.Errorf("downloaded media has no playable duration: %s", filePath)
 	}
-	if video && !videoStreamCoversDuration(videoDuration, duration) {
-		return fmt.Errorf("downloaded video stream ends too early (video=%.2fs, media=%.2fs): %s", videoDuration, duration, filePath)
-	}
-	if video {
-		if err := validateVideoFrameWindow(filePath, duration); err != nil {
-			return err
-		}
-	}
 
 	return nil
-}
-
-func validateVideoFrameWindow(filePath string, mediaDuration float64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-read_intervals", "%+5",
-		"-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames,avg_frame_rate", "-of", "json", filePath)
-	output, err := cmd.Output()
-	if err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("timed out decoding downloaded video: %s", filePath)
-		}
-		return fmt.Errorf("failed to decode downloaded video: %s: %w", filePath, err)
-	}
-
-	var probe struct {
-		Streams []struct {
-			FrameCount string `json:"nb_read_frames"`
-			FrameRate  string `json:"avg_frame_rate"`
-		} `json:"streams"`
-	}
-	if err := json.Unmarshal(output, &probe); err != nil {
-		return fmt.Errorf("failed to parse downloaded video frame probe: %w", err)
-	}
-	if len(probe.Streams) == 0 {
-		return fmt.Errorf("downloaded video has no decodable frames: %s", filePath)
-	}
-
-	frameCount, err := strconv.Atoi(probe.Streams[0].FrameCount)
-	if err != nil || frameCount <= 0 {
-		return fmt.Errorf("downloaded video has no decodable frames: %s", filePath)
-	}
-	frameRate := parseFrameRate(probe.Streams[0].FrameRate)
-	if frameRate <= 0 {
-		if !decodedVideoFramesCoverWindow(frameCount, frameRate, mediaDuration) {
-			return fmt.Errorf("downloaded video ends immediately: %s", filePath)
-		}
-		return nil
-	}
-
-	if !decodedVideoFramesCoverWindow(frameCount, frameRate, mediaDuration) {
-		expectedDuration := min(mediaDuration, 5)
-		if expectedDuration <= 0 {
-			expectedDuration = 5
-		}
-		decodedDuration := float64(frameCount) / frameRate
-		return fmt.Errorf("downloaded video ends too early (decoded=%.2fs, expected=%.2fs): %s",
-			decodedDuration, expectedDuration, filePath)
-	}
-	return nil
-}
-
-func decodedVideoFramesCoverWindow(frameCount int, frameRate, mediaDuration float64) bool {
-	if frameCount <= 0 {
-		return false
-	}
-	if frameRate <= 0 {
-		return frameCount >= 2
-	}
-
-	expectedDuration := min(mediaDuration, 5)
-	if expectedDuration <= 0 {
-		expectedDuration = 5
-	}
-	decodedDuration := float64(frameCount) / frameRate
-	tolerance := math.Max(0.5, expectedDuration*0.1)
-	return expectedDuration-decodedDuration <= tolerance
-}
-
-func parseFrameRate(raw string) float64 {
-	parts := strings.Split(raw, "/")
-	if len(parts) != 2 {
-		return 0
-	}
-	numerator, numeratorErr := strconv.ParseFloat(parts[0], 64)
-	denominator, denominatorErr := strconv.ParseFloat(parts[1], 64)
-	if numeratorErr != nil || denominatorErr != nil || denominator <= 0 {
-		return 0
-	}
-	return numerator / denominator
-}
-
-func videoStreamCoversDuration(videoDuration, mediaDuration float64) bool {
-	if videoDuration <= 0 || mediaDuration <= 0 {
-		return true
-	}
-
-	tolerance := mediaDuration * 0.02
-	if tolerance < 2 {
-		tolerance = 2
-	}
-	return mediaDuration-videoDuration <= tolerance
 }
 
 func parsePositiveDuration(raw string) float64 {
