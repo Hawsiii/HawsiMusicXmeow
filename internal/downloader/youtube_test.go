@@ -33,15 +33,31 @@ func TestBuildMeowStreamURL(t *testing.T) {
 	}
 }
 
-func TestMeowVideoQualityFallbackOrder(t *testing.T) {
-	want := []string{"720", "480", "360", "240"}
-	if len(meowVideoQualities) != len(want) {
-		t.Fatalf("expected %d Meow video quality attempts, got %v", len(want), meowVideoQualities)
+func TestMeowVideoDownloadUses720p(t *testing.T) {
+	if meowVideoQuality != "720" {
+		t.Fatalf("Meow video quality = %q, want 720p", meowVideoQuality)
 	}
-	for i := range want {
-		if meowVideoQualities[i] != want[i] {
-			t.Fatalf("Meow video quality %d = %q, want %q", i, meowVideoQualities[i], want[i])
-		}
+	if len(videoRetryDelays) != videoRetryCount {
+		t.Fatalf("expected %d attempts at the requested quality, got %d", videoRetryCount, len(videoRetryDelays))
+	}
+
+	previousURL, previousKey := config.MeowApiUrl, config.MeowApiKey
+	config.MeowApiUrl = "https://music.example.test/api/"
+	config.MeowApiKey = "test-key"
+	t.Cleanup(func() {
+		config.MeowApiUrl, config.MeowApiKey = previousURL, previousKey
+	})
+
+	streamURL, err := buildMeowStreamURL("video123", "video", meowVideoQuality)
+	if err != nil {
+		t.Fatalf("buildMeowStreamURL returned an error: %v", err)
+	}
+	parsed, err := url.Parse(streamURL)
+	if err != nil {
+		t.Fatalf("returned URL is invalid: %v", err)
+	}
+	if got := parsed.Query().Get("quality"); got != "720" {
+		t.Fatalf("video quality = %q, want 720", got)
 	}
 }
 
