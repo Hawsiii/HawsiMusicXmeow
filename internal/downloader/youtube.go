@@ -265,23 +265,23 @@ func (y *youTubeData) resolveLiveStream(videoID string) (string, bool, error) {
 
 // downloadTrack handles the download of a track from YouTube.
 func (y *youTubeData) downloadTrack(info *utils.TrackInfo, video bool) (string, error) {
-	if cachedPath := findCachedYouTubeMedia(info.Id, video); cachedPath != "" {
-		return cachedPath, nil
-	}
-
-	if meowApiConfigured() {
-		filePath, err := y.downloadWithApi(info.Id, video)
-		if err == nil {
-			if err = validateDownloadedMedia(filePath, video); err == nil {
-				return filePath, nil
-			}
-			slog.Warn("Meow API returned invalid media", "video_id", info.Id, "error", err)
-		} else {
-			slog.Warn("Meow API download failed", "video_id", info.Id, "error", err)
-		}
-	}
-
 	if !video {
+		if cachedPath := findCachedYouTubeMedia(info.Id, false); cachedPath != "" {
+			return cachedPath, nil
+		}
+
+		if meowApiConfigured() {
+			filePath, err := y.downloadWithApi(info.Id, false)
+			if err == nil {
+				if err = validateDownloadedMedia(filePath, false); err == nil {
+					return filePath, nil
+				}
+				slog.Warn("Meow API returned invalid media", "video_id", info.Id, "error", err)
+			} else {
+				slog.Warn("Meow API download failed", "video_id", info.Id, "error", err)
+			}
+		}
+
 		if info.CdnURL != "" {
 			return info.CdnURL, nil
 		}
@@ -292,8 +292,10 @@ func (y *youTubeData) downloadTrack(info *utils.TrackInfo, video bool) (string, 
 				slog.Warn("API gateway download failed", "video_id", info.Id, "error", err)
 			}
 		}
+		return y.downloadWithYtDlp(info.Id, false)
 	}
 
+	slog.Info("Downloading YouTube video with yt-dlp for group call playback", "video_id", info.Id)
 	return y.downloadWithYtDlp(info.Id, video)
 }
 
