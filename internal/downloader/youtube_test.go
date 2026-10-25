@@ -37,8 +37,14 @@ func TestMeowVideoDownloadUses720p(t *testing.T) {
 	if meowVideoQuality != "720" {
 		t.Fatalf("Meow video quality = %q, want 720p", meowVideoQuality)
 	}
-	if len(videoRetryDelays) != videoRetryCount {
-		t.Fatalf("expected %d attempts at the requested quality, got %d", videoRetryCount, len(videoRetryDelays))
+	wantQualities := []string{"720", "480", "360", "240"}
+	if len(meowVideoQualities) != len(wantQualities) {
+		t.Fatalf("Meow quality fallback list = %v, want %v", meowVideoQualities, wantQualities)
+	}
+	for i, quality := range wantQualities {
+		if meowVideoQualities[i] != quality {
+			t.Fatalf("Meow quality fallback list = %v, want %v", meowVideoQualities, wantQualities)
+		}
 	}
 
 	previousURL, previousKey := config.MeowApiUrl, config.MeowApiKey
@@ -82,6 +88,30 @@ func TestBuildYtDlpVideoArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildYtDlpAudioArgs(t *testing.T) {
+	previousProxy := config.Proxy
+	config.Proxy = "http://proxy.example.test:8080"
+	t.Cleanup(func() {
+		config.Proxy = previousProxy
+	})
+
+	args := buildYtDlpAudioArgs("video123")
+	joined := strings.Join(args, " ")
+	for _, expected := range []string{
+		"-f bestaudio/best",
+		"--extract-audio",
+		"--audio-format mp3",
+		"video123-audio-fallback.%(ext)s",
+		"--proxy http://proxy.example.test:8080",
+		"https://www.youtube.com/watch?v=video123",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("yt-dlp audio args %v do not contain %q", args, expected)
+		}
+	}
+}
+
 func TestValidateDecodedVideoFrameCount(t *testing.T) {
 	tests := []struct {
 		name       string
