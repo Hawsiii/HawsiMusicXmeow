@@ -30,21 +30,32 @@ func TestFitVideoDimensionsPreservesSourceResolution(t *testing.T) {
 		sourceHeight          int
 		wantWidth, wantHeight int
 	}{
-		{"720p source", 1280, 720, 1280, 720},
+		{"600p source", 1066, 600, 1066, 600},
+		{"720p source", 1280, 720, 1066, 600},
 		{"480p source", 854, 480, 854, 480},
-		{"larger source", 1920, 1080, 1280, 720},
-		{"portrait source", 1080, 1920, 404, 720},
+		{"larger source", 1920, 1080, 1066, 600},
+		{"portrait source", 1080, 1920, 338, 600},
 		{"odd source", 641, 361, 640, 360},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			width, height := fitVideoDimensions(test.sourceWidth, test.sourceHeight, 1280, 720)
+			width, height := fitVideoDimensions(test.sourceWidth, test.sourceHeight, maxVideoWidth, maxVideoHeight)
 			if width != test.wantWidth || height != test.wantHeight {
 				t.Fatalf("fitVideoDimensions(%d, %d) = %dx%d, want %dx%d",
 					test.sourceWidth, test.sourceHeight, width, height, test.wantWidth, test.wantHeight)
 			}
 		})
+	}
+}
+
+func TestGetMediaDescriptionCapsVideoAt600p(t *testing.T) {
+	description := getMediaDescription("https://example.com/video.mp4", true, 0, "")
+	if description.Camera == nil ||
+		description.Camera.Width != maxVideoWidth ||
+		description.Camera.Height != maxVideoHeight ||
+		!strings.Contains(description.Camera.Input, "scale=1066:600") {
+		t.Fatalf("expected video output capped at 1066x600, got %#v", description.Camera)
 	}
 }
 
@@ -76,7 +87,7 @@ func TestGetMediaDescriptionAppliesSpeedFilters(t *testing.T) {
 		t.Fatalf("expected audio speed filter, got %#v", description.Microphone)
 	}
 	if description.Camera == nil ||
-		!strings.Contains(description.Camera.Input, `-vf "setpts=0.5*PTS,scale=1280:720`) ||
+		!strings.Contains(description.Camera.Input, `-vf "setpts=0.5*PTS,scale=1066:600`) ||
 		strings.Contains(description.Camera.Input, "-filter:a") {
 		t.Fatalf("expected video speed filter combined with scaling, got %#v", description.Camera)
 	}

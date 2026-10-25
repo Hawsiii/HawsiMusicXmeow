@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"os/exec"
 	"path"
@@ -23,6 +24,11 @@ import (
 )
 
 var urlRegex = regexp.MustCompile(`^https?://`)
+
+const (
+	maxVideoWidth  = 1066
+	maxVideoHeight = 600
+)
 
 // getMediaDescription creates a media description for ntgcalls based on the provided file path, video status, and ffmpeg parameters.
 func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameters string) ntgcalls.MediaDescription {
@@ -75,7 +81,7 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 		}
 	}
 
-	width, height := 1280, 720
+	width, height := maxVideoWidth, maxVideoHeight
 	if !isURL {
 		if sourceWidth, sourceHeight := getVideoDimensions(filePath); sourceWidth > 0 && sourceHeight > 0 {
 			width, height = fitVideoDimensions(sourceWidth, sourceHeight, width, height)
@@ -163,8 +169,8 @@ func shouldPaceInput(input string) bool {
 
 func fitVideoDimensions(sourceWidth, sourceHeight, maxWidth, maxHeight int) (int, int) {
 	scale := min(1, float64(maxWidth)/float64(sourceWidth), float64(maxHeight)/float64(sourceHeight))
-	width := int(float64(sourceWidth) * scale)
-	height := int(float64(sourceHeight) * scale)
+	width := int(math.Round(float64(sourceWidth) * scale))
+	height := int(math.Round(float64(sourceHeight) * scale))
 	width -= width % 2
 	height -= height % 2
 	return max(width, 2), max(height, 2)
