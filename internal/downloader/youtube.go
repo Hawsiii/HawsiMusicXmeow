@@ -265,38 +265,54 @@ func (y *youTubeData) resolveLiveStream(videoID string) (string, bool, error) {
 
 // downloadTrack handles the download of a track from YouTube.
 func (y *youTubeData) downloadTrack(info *utils.TrackInfo, video bool) (string, error) {
-	if !video {
-		if cachedPath := findCachedYouTubeMedia(info.Id, false); cachedPath != "" {
-			return cachedPath, nil
-		}
-
+	if video {
 		if meowApiConfigured() {
-			filePath, err := y.downloadWithApi(info.Id, false)
+			slog.Info("Trying Meow API for YouTube video playback", "video_id", info.Id)
+			filePath, err := y.downloadWithApi(info.Id, true)
 			if err == nil {
-				if err = validateDownloadedMedia(filePath, false); err == nil {
+				if err = validateDownloadedMedia(filePath, true); err == nil {
 					return filePath, nil
 				}
-				slog.Warn("Meow API returned invalid media", "video_id", info.Id, "error", err)
+				slog.Warn("Meow API returned invalid video media; falling back to yt-dlp", "video_id", info.Id, "error", err)
+				if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+					slog.Warn("Failed to remove invalid Meow video before fallback", "video_id", info.Id, "path", filePath, "error", removeErr)
+				}
 			} else {
-				slog.Warn("Meow API download failed", "video_id", info.Id, "error", err)
+				slog.Warn("Meow API video download failed; falling back to yt-dlp", "video_id", info.Id, "error", err)
 			}
 		}
 
-		if info.CdnURL != "" {
-			return info.CdnURL, nil
-		}
-		if y.ApiUrl != "" && y.APIKey != "" {
-			if filePath, err := y.downloadWithGatewayApi(info.Id); err == nil {
-				return filePath, nil
-			} else {
-				slog.Warn("API gateway download failed", "video_id", info.Id, "error", err)
-			}
-		}
-		return y.downloadWithYtDlp(info.Id, false)
+		return y.downloadWithYtDlp(info.Id, true)
 	}
 
-	slog.Info("Downloading YouTube video with yt-dlp for group call playback", "video_id", info.Id)
-	return y.downloadWithYtDlp(info.Id, video)
+	if cachedPath := findCachedYouTubeMedia(info.Id, false); cachedPath != "" {
+		return cachedPath, nil
+	}
+
+	if meowApiConfigured() {
+		filePath, err := y.downloadWithApi(info.Id, false)
+		if err == nil {
+			if err = validateDownloadedMedia(filePath, false); err == nil {
+				return filePath, nil
+			}
+			slog.Warn("Meow API returned invalid media", "video_id", info.Id, "error", err)
+		} else {
+			slog.Warn("Meow API download failed", "video_id", info.Id, "error", err)
+		}
+	}
+
+	if info.CdnURL != "" {
+		return info.CdnURL, nil
+	}
+	if y.ApiUrl != "" && y.APIKey != "" {
+		if filePath, err := y.downloadWithGatewayApi(info.Id); err == nil {
+			return filePath, nil
+		} else {
+			slog.Warn("API gateway download failed", "video_id", info.Id, "error", err)
+		}
+	}
+
+	return y.downloadWithYtDlp(info.Id, false)
 }
 
 func findCachedYouTubeMedia(videoID string, video bool) string {
