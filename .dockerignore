@@ -1,5 +1,7 @@
 **
 !go.*
 !*.go
+!*.c
+!*.h
 !internal
 !ntgcalls
