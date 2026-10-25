@@ -61,6 +61,27 @@ func TestMeowVideoDownloadUses720p(t *testing.T) {
 	}
 }
 
+func TestBuildYtDlpVideoArgs(t *testing.T) {
+	previousProxy := config.Proxy
+	config.Proxy = "http://proxy.example.test:8080"
+	t.Cleanup(func() {
+		config.Proxy = previousProxy
+	})
+
+	args := buildYtDlpVideoArgs("video123")
+	joined := strings.Join(args, " ")
+	for _, expected := range []string{
+		"bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+		"--merge-output-format mkv",
+		"video123-fallback.%(ext)s",
+		"--proxy http://proxy.example.test:8080",
+		"https://www.youtube.com/watch?v=video123",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("yt-dlp args %v do not contain %q", args, expected)
+		}
+	}
+}
 func TestValidateDecodedVideoFrameCount(t *testing.T) {
 	tests := []struct {
 		name       string

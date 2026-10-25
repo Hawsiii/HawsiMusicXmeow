@@ -263,8 +263,64 @@ func (y *youTubeData) downloadVideoWithRetry(videoID string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("Meow API could not provide a playable 720p video after %d attempts: %w",
+	filePath, err := downloadVideoWithYtDlp(videoID)
+	if err == nil {
+		return filePath, nil
+	}
+	attemptErrors = append(attemptErrors, fmt.Errorf("yt-dlp fallback: %w", err))
+
+	return "", fmt.Errorf("video download failed after %d Meow API attempts and yt-dlp fallback: %w",
 		videoRetryCount, errors.Join(attemptErrors...))
+}
+
+func buildYtDlpVideoArgs(videoID string) []string {
+	args := []string{
+		"--no-warnings",
+		"--no-playlist",
+		"--no-progress",
+		"--force-overwrites",
+		"--retries", "3",
+		"--fragment-retries", "3",
+		"-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+		"--merge-output-format", "mkv",
+		"-o", filepath.Join(config.DownloadsDir, videoID+"-fallback.%(ext)s"),
+		"--print", "after_move:filepath",
+	}
+	if config.Proxy != "" {
+		args = append(args, "--proxy", config.Proxy)
+	}
+	return append(args, "https://www.youtube.com/watch?v="+videoID)
+}
+
+func downloadVideoWithYtDlp(videoID string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "yt-dlp", buildYtDlpVideoArgs(videoID)...)
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("yt-dlp video fallback timed out: %w", ctx.Err())
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return "", fmt.Errorf("yt-dlp video fallback failed with exit code %d: %s", exitErr.ExitCode(), strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return "", fmt.Errorf("could not run yt-dlp video fallback: %w", err)
+	}
+
+	filePath := strings.TrimSpace(string(output))
+	if filePath == "" {
+		return "", errors.New("yt-dlp video fallback returned no file path")
+	}
+	if err := validateDownloadedMedia(filePath, true); err != nil {
+		if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			slog.Warn("Failed to remove invalid yt-dlp video", "video_id", videoID, "path", filePath, "error", removeErr)
+		}
+		return "", fmt.Errorf("yt-dlp video fallback returned invalid media: %w", err)
+	}
+
+	return filePath, nil
 }
 
 func findCachedYouTubeMedia(videoID string, video bool) string {
@@ -353,8 +409,8 @@ func validateDecodableVideoFrames(filePath string) error {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-i", filePath,
-		"-map", "0:v:0", "-an", "-sn", "-dn", "-vf", "scale=16:16",
-		"-frames:v", "2", "-fps_mode", "passthrough", "-pix_fmt", "yuv420p",
+		"-xerror", "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", "scale=16:16",
+		"-frames:v", "30", "-fps_mode", "passthrough", "-pix_fmt", "yuv420p",
 		"-f", "rawvideo", "pipe:1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
