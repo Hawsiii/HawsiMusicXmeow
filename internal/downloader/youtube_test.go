@@ -3,8 +3,11 @@ package downloader
 import (
 	"ashokshau/tgmusic/internal/config"
 	"ashokshau/tgmusic/internal/utils"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -64,6 +67,46 @@ func TestMeowVideoDownloadUses720p(t *testing.T) {
 	}
 	if got := parsed.Query().Get("quality"); got != "720" {
 		t.Fatalf("video quality = %q, want 720", got)
+	}
+}
+
+func TestMeowVideoFailuresAtEveryQualityInvokeFallback(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		qualities []string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		qualities = append(qualities, r.URL.Query().Get("quality"))
+		mu.Unlock()
+		http.Error(w, "video unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	previousURL, previousKey, previousDir, previousExecutable := config.MeowApiUrl, config.MeowApiKey, config.DownloadsDir, ytDlpExecutable
+	config.MeowApiUrl = server.URL
+	config.MeowApiKey = "test-key"
+	config.DownloadsDir = t.TempDir()
+	ytDlpExecutable = t.TempDir() + "/missing-yt-dlp"
+	t.Cleanup(func() {
+		config.MeowApiUrl, config.MeowApiKey, config.DownloadsDir = previousURL, previousKey, previousDir
+		ytDlpExecutable = previousExecutable
+	})
+
+	_, err := newYouTubeData("").downloadVideoWithRetry("video123")
+	if err == nil || !strings.Contains(err.Error(), "yt-dlp video fallback") {
+		t.Fatalf("downloadVideoWithRetry error = %v, want yt-dlp fallback error", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(qualities) != len(meowVideoQualities) {
+		t.Fatalf("Meow qualities requested = %v, want %v", qualities, meowVideoQualities)
+	}
+	for i, quality := range meowVideoQualities {
+		if qualities[i] != quality {
+			t.Fatalf("Meow qualities requested = %v, want %v", qualities, meowVideoQualities)
+		}
 	}
 }
 
@@ -135,11 +178,14 @@ func TestValidateDecodedVideoFrameCount(t *testing.T) {
 	}
 }
 
-func TestYouTubeDownloadsRequireMeowAPI(t *testing.T) {
+func TestYouTubeDownloadsFallbackWhenMeowIsNotConfigured(t *testing.T) {
 	previousURL, previousKey := config.MeowApiUrl, config.MeowApiKey
 	config.MeowApiUrl, config.MeowApiKey = "", ""
+	previousExecutable := ytDlpExecutable
+	ytDlpExecutable = t.TempDir() + "/missing-yt-dlp"
 	t.Cleanup(func() {
 		config.MeowApiUrl, config.MeowApiKey = previousURL, previousKey
+		ytDlpExecutable = previousExecutable
 	})
 
 	for _, video := range []bool{false, true} {
@@ -147,8 +193,8 @@ func TestYouTubeDownloadsRequireMeowAPI(t *testing.T) {
 			&utils.TrackInfo{Id: "abc123", Platform: utils.YouTube},
 			video,
 		)
-		if err == nil || !strings.Contains(err.Error(), "Meow API is required") {
-			t.Fatalf("downloadTrack(video=%t) error = %v, want missing Meow API error", video, err)
+		if err == nil || !strings.Contains(err.Error(), "could not run yt-dlp") {
+			t.Fatalf("downloadTrack(video=%t) error = %v, want yt-dlp fallback error", video, err)
 		}
 	}
 
@@ -160,8 +206,14 @@ func TestYouTubeDownloadsRequireMeowAPI(t *testing.T) {
 		},
 		false,
 	)
-	if err == nil || !strings.Contains(err.Error(), "Meow API is required") {
-		t.Fatalf("YouTube API wrapper error = %v, want missing Meow API error instead of CDN fallback", err)
+	if err == nil || !strings.Contains(err.Error(), "could not run yt-dlp") {
+		t.Fatalf("YouTube API wrapper error = %v, want yt-dlp fallback error", err)
+	}
+}
+
+func TestMediaDownloadsUseLongerTimeoutThanAPIRequests(t *testing.T) {
+	if downloadTimeout <= defaultRequestTimeout || downloadClient.Timeout != downloadTimeout {
+		t.Fatalf("media download timeout = %s, request timeout = %s", downloadClient.Timeout, defaultRequestTimeout)
 	}
 }
 

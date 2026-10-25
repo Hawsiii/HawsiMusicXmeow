@@ -64,6 +64,12 @@ var client = &http.Client{
 	},
 }
 
+var downloadClient = &http.Client{
+	Timeout:       downloadTimeout,
+	Transport:     client.Transport,
+	CheckRedirect: client.CheckRedirect,
+}
+
 func sendRequest(method, fullURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	baseReq, err := http.NewRequest(method, fullURL, nil)
 	if err != nil {
@@ -180,7 +186,7 @@ func downloadFile(urlStr, fileName string, overwrite bool) (string, error) {
 		return "", fmt.Errorf("failed to create the request: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("the request failed: %w", err)
 	}

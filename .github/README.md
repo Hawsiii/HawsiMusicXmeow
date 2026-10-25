@@ -94,7 +94,7 @@ cp sample.env .env
 | `API_URL`             |    No    | -                             | Optional API gateway base URL.                                         |
 | `API_KEY`             |    No    | -                             | API gateway key used with `API_URL`.                                   |
 | `MEOW_API_URL`        |    No    | `https://music.yukiapi.site`   | Meow API base URL used first for YouTube audio and video; yt-dlp is the fallback. |
-| `MEOW_API_KEY`        | YouTube | -                             | API key required for Meow YouTube downloads; yt-dlp is tried if a download fails. |
+| `MEOW_API_KEY`        |    No    | -                             | Meow API key; yt-dlp is used if the key is missing or a Meow download fails. |
 | `SESSION_TYPE`        |    No    | `pyrogram`                    | Session string format (`pyrogram` or `telethon`).                      |
 | `DB_NAME`             |    No    | `Anon`                        | Database name inside MongoDB.                                          |
 | `LOGGER_ID`           |    No    | `0`                           | Telegram chat/channel ID where bot startup logs and errors are sent.   |

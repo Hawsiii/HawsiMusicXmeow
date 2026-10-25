@@ -39,6 +39,7 @@ const (
 )
 
 var meowVideoQualities = []string{meowVideoQuality, "480", "360", "240"}
+var ytDlpExecutable = "yt-dlp"
 
 func meowApiConfigured() bool {
 	return strings.TrimSpace(config.MeowApiUrl) != "" && strings.TrimSpace(config.MeowApiKey) != ""
@@ -211,10 +212,6 @@ func (y *youTubeData) downloadTrack(info *utils.TrackInfo, video bool) (string, 
 	if info == nil || info.Id == "" {
 		return "", errors.New("YouTube video ID is empty")
 	}
-	if !meowApiConfigured() {
-		return "", errors.New("Meow API is required for YouTube downloads; configure MEOW_API_URL and MEOW_API_KEY")
-	}
-
 	if cachedPath := findCachedYouTubeMedia(info.Id, video); cachedPath != "" {
 		return cachedPath, nil
 	}
@@ -223,51 +220,57 @@ func (y *youTubeData) downloadTrack(info *utils.TrackInfo, video bool) (string, 
 		return y.downloadVideoWithRetry(info.Id)
 	}
 
-	mediaType := "audio"
-	slog.Info("Downloading YouTube media via Meow API", "video_id", info.Id, "type", mediaType)
-	filePath, err := y.downloadWithApi(info.Id, video, meowAudioQuality)
-	if err != nil {
-		slog.Warn("Meow audio download failed; trying yt-dlp fallback", "video_id", info.Id, "error", err)
-		fallbackPath, fallbackErr := downloadAudioWithYtDlp(info.Id)
-		if fallbackErr != nil {
-			return "", fmt.Errorf("audio download failed via Meow API and yt-dlp fallback: %w",
-				errors.Join(err, fallbackErr))
+	var meowErr error
+	if meowApiConfigured() {
+		slog.Info("Downloading YouTube media via Meow API", "video_id", info.Id, "type", "audio")
+		filePath, err := y.downloadWithApi(info.Id, false, meowAudioQuality)
+		if err == nil {
+			err = validateDownloadedMedia(filePath, false)
+			if err == nil {
+				return filePath, nil
+			}
+			if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				slog.Warn("Failed to remove invalid Meow audio", "video_id", info.Id, "path", filePath, "error", removeErr)
+			}
 		}
-		return fallbackPath, nil
+		meowErr = err
+		slog.Warn("Meow audio download failed; trying yt-dlp fallback", "video_id", info.Id, "error", meowErr)
+	} else {
+		meowErr = errors.New("Meow API is not configured")
+		slog.Info("Meow API is not configured; trying yt-dlp for YouTube audio", "video_id", info.Id)
 	}
-	if err = validateDownloadedMedia(filePath, video); err != nil {
-		if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			slog.Warn("Failed to remove invalid Meow media", "video_id", info.Id, "path", filePath, "error", removeErr)
-		}
-		slog.Warn("Meow returned invalid audio; trying yt-dlp fallback", "video_id", info.Id, "error", err)
-		fallbackPath, fallbackErr := downloadAudioWithYtDlp(info.Id)
-		if fallbackErr != nil {
-			return "", fmt.Errorf("audio download failed via Meow API and yt-dlp fallback: %w",
-				errors.Join(fmt.Errorf("invalid Meow audio: %w", err), fallbackErr))
-		}
-		return fallbackPath, nil
+
+	fallbackPath, fallbackErr := downloadAudioWithYtDlp(info.Id)
+	if fallbackErr != nil {
+		return "", fmt.Errorf("audio download failed via Meow API and yt-dlp fallback: %w",
+			errors.Join(meowErr, fallbackErr))
 	}
-	return filePath, nil
+	return fallbackPath, nil
 }
 
 func (y *youTubeData) downloadVideoWithRetry(videoID string) (string, error) {
 	var attemptErrors []error
-	for _, quality := range meowVideoQualities {
-		slog.Info("Downloading YouTube video via Meow API", "video_id", videoID, "quality", quality)
-		filePath, err := y.downloadWithApi(videoID, true, quality)
-		if err == nil {
-			err = validateDownloadedMedia(filePath, true)
-		}
-		if err == nil {
-			return filePath, nil
-		}
+	if meowApiConfigured() {
+		for _, quality := range meowVideoQualities {
+			slog.Info("Downloading YouTube video via Meow API", "video_id", videoID, "quality", quality)
+			filePath, err := y.downloadWithApi(videoID, true, quality)
+			if err == nil {
+				err = validateDownloadedMedia(filePath, true)
+			}
+			if err == nil {
+				return filePath, nil
+			}
 
-		attemptErrors = append(attemptErrors, fmt.Errorf("quality %sp: %w", quality, err))
-		if filePath != "" {
-			if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-				slog.Warn("Failed to remove invalid Meow video", "video_id", videoID, "path", filePath, "error", removeErr)
+			attemptErrors = append(attemptErrors, fmt.Errorf("quality %sp: %w", quality, err))
+			if filePath != "" {
+				if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+					slog.Warn("Failed to remove invalid Meow video", "video_id", videoID, "path", filePath, "error", removeErr)
+				}
 			}
 		}
+	} else {
+		attemptErrors = append(attemptErrors, errors.New("Meow API is not configured"))
+		slog.Info("Meow API is not configured; trying yt-dlp for YouTube video", "video_id", videoID)
 	}
 
 	filePath, err := downloadVideoWithYtDlp(videoID)
@@ -276,8 +279,8 @@ func (y *youTubeData) downloadVideoWithRetry(videoID string) (string, error) {
 	}
 	attemptErrors = append(attemptErrors, fmt.Errorf("yt-dlp fallback: %w", err))
 
-	return "", fmt.Errorf("video download failed at Meow API qualities %s and with yt-dlp fallback: %w",
-		strings.Join(meowVideoQualities, ", "), errors.Join(attemptErrors...))
+	return "", fmt.Errorf("video download failed via Meow API and yt-dlp fallback: %w",
+		errors.Join(attemptErrors...))
 }
 
 func buildYtDlpVideoArgs(videoID string) []string {
@@ -329,10 +332,10 @@ func downloadAudioWithYtDlp(videoID string) (string, error) {
 }
 
 func downloadWithYtDlp(videoID, mediaType string, args []string, video bool) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+	cmd := exec.CommandContext(ctx, ytDlpExecutable, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {

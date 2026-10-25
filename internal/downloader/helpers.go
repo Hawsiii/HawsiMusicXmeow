@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	downloadTimeout        = 40 * time.Second
+	downloadTimeout        = 15 * time.Minute
 	defaultDownloadDirPerm = 0755
 )
 
