@@ -27,7 +27,7 @@ import (
 
 const (
 	meowAudioQuality = "128"
-	meowVideoQuality = "480"
+	meowVideoQuality = "720"
 
 	// meowMinValidSize mirrors the Python reference's 10000-byte sanity check
 	// (rejects tiny error/placeholder responses before they hit ffprobe).
@@ -384,7 +384,7 @@ func (y *youTubeData) buildYtdlpFallbackParams(videoID string, video bool) []str
 	for index := range params {
 		if params[index] == "-f" && index+1 < len(params) {
 			if video {
-				params[index+1] = "best[height<=480]/best"
+				params[index+1] = "best[height<=720]"
 			} else {
 				params[index+1] = "ba/b"
 			}
@@ -459,7 +459,7 @@ func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
 	if video {
 		params = append(params,
 			"-f",
-			"best[height<=480][ext=mp4]/best[height<=480]/best[ext=mp4]/best",
+			"best[height<=720][ext=mp4]/best[height<=720]",
 		)
 	} else {
 		params = append(params,

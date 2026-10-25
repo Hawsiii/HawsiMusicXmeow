@@ -76,7 +76,7 @@ func TestGetMediaDescriptionAppliesSpeedFilters(t *testing.T) {
 		t.Fatalf("expected audio speed filter, got %#v", description.Microphone)
 	}
 	if description.Camera == nil ||
-		!strings.Contains(description.Camera.Input, `-vf "setpts=0.5*PTS,scale=854:480`) ||
+		!strings.Contains(description.Camera.Input, `-vf "setpts=0.5*PTS,scale=1280:720`) ||
 		strings.Contains(description.Camera.Input, "-filter:a") {
 		t.Fatalf("expected video speed filter combined with scaling, got %#v", description.Camera)
 	}

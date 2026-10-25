@@ -75,7 +75,7 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 		}
 	}
 
-	width, height := 854, 480
+	width, height := 1280, 720
 	if !isURL {
 		if sourceWidth, sourceHeight := getVideoDimensions(filePath); sourceWidth > 0 && sourceHeight > 0 {
 			width, height = fitVideoDimensions(sourceWidth, sourceHeight, width, height)
