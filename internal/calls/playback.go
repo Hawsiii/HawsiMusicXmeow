@@ -273,7 +273,7 @@ func (c *TelegramCalls) PlayNext(bot *td.Client, chatID int64, quiet ...bool) er
 
 func (c *TelegramCalls) handleNoSong(bot *td.Client, chatID int64, quiet ...bool) error {
 	_ = c.Stop(chatID, false)
-	_, _ = messaging.Send(bot, chatID, "🎵 Queue finished. Add more songs with /play.", nil, len(quiet) > 0 && quiet[0])
+	_, _ = messaging.Send(bot, chatID, "🎵 Hawsi Ka Ghee Khatam... Abhi Kuch Nahi Baj Paa Raha VC Me Hawsi Se...", nil, len(quiet) > 0 && quiet[0])
 	return nil
 }
 
