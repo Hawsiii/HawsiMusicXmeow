@@ -29,7 +29,13 @@ func (c *TelegramCalls) startCallStream(ctx context.Context, acc *AssistantAccou
 	}
 
 	if _, ok := calls[chatId]; ok {
-		return acc.binding.SetStreamSources(chatId, ntgcalls.CaptureStream, mediaDesc)
+		if err = acc.binding.SetStreamSources(chatId, ntgcalls.CaptureStream, mediaDesc); err != nil {
+			return err
+		}
+		if chatId < 0 {
+			return c.joinPresentation(ctx, acc, chatId, mediaDesc.Screen != nil)
+		}
+		return nil
 	}
 
 	if err = c.connectCall(ctx, acc, chatId, mediaDesc, ""); err != nil {

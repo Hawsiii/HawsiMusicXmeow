@@ -7,14 +7,14 @@ import (
 
 func TestGetMediaDescriptionUsesEfficientVideoScaling(t *testing.T) {
 	description := getMediaDescription("sample.mp4", true, 0, "")
-	if description.Camera == nil ||
-		!strings.Contains(description.Camera.Input, "ffmpeg -hide_banner -re -i ") ||
-		!strings.Contains(description.Camera.Input, "-map 0:v:0") ||
-		!strings.Contains(description.Camera.Input, "flags=fast_bilinear") ||
-		!strings.Contains(description.Camera.Input, "scale=") ||
-		!strings.Contains(description.Camera.Input, "pad=") ||
-		strings.Contains(description.Camera.Input, "crop=") {
-		t.Fatalf("expected local video input to be mapped and efficiently scaled, got %#v", description.Camera)
+	if description.Screen == nil ||
+		!strings.Contains(description.Screen.Input, "ffmpeg -hide_banner -re -i ") ||
+		!strings.Contains(description.Screen.Input, "-map 0:v:0") ||
+		!strings.Contains(description.Screen.Input, "flags=fast_bilinear") ||
+		!strings.Contains(description.Screen.Input, "scale=") ||
+		!strings.Contains(description.Screen.Input, "pad=") ||
+		strings.Contains(description.Screen.Input, "crop=") {
+		t.Fatalf("expected local video input to be mapped and efficiently scaled as a screen presentation, got %#v", description.Screen)
 	}
 	if description.Microphone == nil ||
 		!strings.Contains(description.Microphone.Input, "ffmpeg -re -i ") ||
@@ -50,23 +50,23 @@ func TestFitVideoDimensionsPreservesSourceResolution(t *testing.T) {
 
 func TestGetMediaDescriptionPacesDirectVideoURLs(t *testing.T) {
 	description := getMediaDescription("https://example.com/video.mp4", true, 0, "")
-	if description.Camera == nil ||
-		!strings.Contains(description.Camera.Input, "-reconnect 1") ||
-		!strings.Contains(description.Camera.Input, " -re -i ") {
-		t.Fatalf("expected direct remote video input to reconnect and be paced, got %#v", description.Camera)
+	if description.Screen == nil ||
+		!strings.Contains(description.Screen.Input, "-reconnect 1") ||
+		!strings.Contains(description.Screen.Input, " -re -i ") {
+		t.Fatalf("expected direct remote video input to reconnect and be paced, got %#v", description.Screen)
 	}
 
 	googleVideoURL := "https://video-downloads.googleusercontent.com/opaque-signed-id?expire=123"
 	description = getMediaDescription(googleVideoURL, true, 0, "")
-	if description.Camera == nil || !strings.Contains(description.Camera.Input, " -re -i ") {
-		t.Fatalf("expected extensionless signed video URL to be paced, got %#v", description.Camera)
+	if description.Screen == nil || !strings.Contains(description.Screen.Input, " -re -i ") {
+		t.Fatalf("expected extensionless signed video URL to be paced, got %#v", description.Screen)
 	}
 
 	manifest := getMediaDescription("https://example.com/live.m3u8?token=example", true, 0, "")
-	if manifest.Camera == nil ||
-		!strings.Contains(manifest.Camera.Input, "-reconnect 1") ||
-		strings.Contains(manifest.Camera.Input, " -re -i ") {
-		t.Fatalf("expected live manifest input to reconnect without file pacing, got %#v", manifest.Camera)
+	if manifest.Screen == nil ||
+		!strings.Contains(manifest.Screen.Input, "-reconnect 1") ||
+		strings.Contains(manifest.Screen.Input, " -re -i ") {
+		t.Fatalf("expected live manifest input to reconnect without file pacing, got %#v", manifest.Screen)
 	}
 }
 
@@ -75,9 +75,9 @@ func TestGetMediaDescriptionAppliesSpeedFilters(t *testing.T) {
 	if description.Microphone == nil || !strings.Contains(description.Microphone.Input, `-af "atempo=2.0"`) {
 		t.Fatalf("expected audio speed filter, got %#v", description.Microphone)
 	}
-	if description.Camera == nil ||
-		!strings.Contains(description.Camera.Input, `-vf "setpts=0.5*PTS,scale=1280:720`) ||
-		strings.Contains(description.Camera.Input, "-filter:a") {
-		t.Fatalf("expected video speed filter combined with scaling, got %#v", description.Camera)
+	if description.Screen == nil ||
+		!strings.Contains(description.Screen.Input, `-vf "setpts=0.5*PTS,scale=1280:720`) ||
+		strings.Contains(description.Screen.Input, "-filter:a") {
+		t.Fatalf("expected video speed filter combined with scaling, got %#v", description.Screen)
 	}
 }
