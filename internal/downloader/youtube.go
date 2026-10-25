@@ -34,6 +34,8 @@ const (
 	meowMinValidSize = 10000
 )
 
+var meowVideoQualities = []string{meowVideoQuality, "480", "360", "240"}
+
 func meowApiConfigured() bool {
 	return strings.TrimSpace(config.MeowApiUrl) != "" && strings.TrimSpace(config.MeowApiKey) != ""
 }
@@ -213,22 +215,45 @@ func (y *youTubeData) downloadTrack(info *utils.TrackInfo, video bool) (string, 
 		return cachedPath, nil
 	}
 
-	mediaType := "audio"
-	if video {
-		mediaType = "video"
-	}
-	slog.Info("Downloading YouTube media via Meow API", "video_id", info.Id, "type", mediaType)
-	filePath, err := y.downloadWithApi(info.Id, video)
-	if err != nil {
-		return "", err
-	}
-	if err = validateDownloadedMedia(filePath, video); err != nil {
-		if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			slog.Warn("Failed to remove invalid Meow media", "video_id", info.Id, "path", filePath, "error", removeErr)
+	if !video {
+		slog.Info("Downloading YouTube media via Meow API", "video_id", info.Id, "type", "audio")
+		filePath, err := y.downloadWithApi(info.Id, false, meowAudioQuality)
+		if err != nil {
+			return "", err
 		}
-		return "", fmt.Errorf("Meow API returned invalid media: %w", err)
+		if err = validateDownloadedMedia(filePath, false); err != nil {
+			removeInvalidYouTubeMedia(info.Id, filePath, err)
+			return "", fmt.Errorf("Meow API returned invalid media: %w", err)
+		}
+		return filePath, nil
 	}
-	return filePath, nil
+
+	var attemptErrors []error
+	for _, quality := range meowVideoQualities {
+		slog.Info("Downloading YouTube video via Meow API", "video_id", info.Id, "quality", quality)
+		filePath, err := y.downloadWithApi(info.Id, true, quality)
+		if err == nil {
+			err = validateDownloadedMedia(filePath, true)
+		}
+		if err == nil {
+			return filePath, nil
+		}
+
+		attemptErrors = append(attemptErrors, fmt.Errorf("quality %sp: %w", quality, err))
+		removeInvalidYouTubeMedia(info.Id, filePath, err)
+	}
+
+	return "", fmt.Errorf("Meow API could not provide playable YouTube video at qualities %s: %w",
+		strings.Join(meowVideoQualities, ", "), errors.Join(attemptErrors...))
+}
+
+func removeInvalidYouTubeMedia(videoID, filePath string, reason error) {
+	if filePath == "" {
+		return
+	}
+	if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		slog.Warn("Failed to remove invalid Meow media", "video_id", videoID, "path", filePath, "reason", reason, "error", removeErr)
+	}
 }
 
 func findCachedYouTubeMedia(videoID string, video bool) string {
@@ -300,10 +325,48 @@ func validateDownloadedMedia(filePath string, video bool) error {
 	if !hasAudio || (video && !hasVideo) {
 		return fmt.Errorf("downloaded media is missing required streams (audio=%t, video=%t): %s", hasAudio, hasVideo, filePath)
 	}
+	if video {
+		if err := validateDecodableVideoFrames(filePath); err != nil {
+			return err
+		}
+	}
 	if duration <= 0 {
 		return fmt.Errorf("downloaded media has no playable duration: %s", filePath)
 	}
 
+	return nil
+}
+
+func validateDecodableVideoFrames(filePath string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-read_intervals", "%+5",
+		"-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "json", filePath)
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("timed out checking video frames: %s", filePath)
+		}
+		return fmt.Errorf("failed to check video frames: %s: %w", filePath, err)
+	}
+
+	var probe struct {
+		Streams []struct {
+			FrameCount string `json:"nb_read_frames"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(output, &probe); err != nil {
+		return fmt.Errorf("failed to parse video frame probe: %w", err)
+	}
+	if len(probe.Streams) == 0 {
+		return fmt.Errorf("downloaded video has no decodable frames: %s", filePath)
+	}
+
+	frameCount, err := strconv.Atoi(probe.Streams[0].FrameCount)
+	if err != nil || frameCount < 2 {
+		return fmt.Errorf("downloaded video ends immediately: %s", filePath)
+	}
 	return nil
 }
 
@@ -316,7 +379,7 @@ func parsePositiveDuration(raw string) float64 {
 }
 
 // downloadWithApi downloads a track from Meow's direct stream endpoint.
-func (y *youTubeData) downloadWithApi(videoID string, video bool) (string, error) {
+func (y *youTubeData) downloadWithApi(videoID string, video bool, quality string) (string, error) {
 	if videoID == "" {
 		return "", errors.New("videoID is empty")
 	}
@@ -327,11 +390,11 @@ func (y *youTubeData) downloadWithApi(videoID string, video bool) (string, error
 
 	downloadType := "audio"
 	ext := ".mp3"
-	quality := meowAudioQuality
 	if video {
 		downloadType = "video"
 		ext = ".mp4"
-		quality = meowVideoQuality
+	} else {
+		quality = meowAudioQuality
 	}
 
 	fileName := filepath.Join(config.DownloadsDir, videoID+ext)

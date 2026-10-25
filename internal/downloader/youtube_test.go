@@ -33,6 +33,18 @@ func TestBuildMeowStreamURL(t *testing.T) {
 	}
 }
 
+func TestMeowVideoQualityFallbackOrder(t *testing.T) {
+	want := []string{"720", "480", "360", "240"}
+	if len(meowVideoQualities) != len(want) {
+		t.Fatalf("expected %d Meow video quality attempts, got %v", len(want), meowVideoQualities)
+	}
+	for i := range want {
+		if meowVideoQualities[i] != want[i] {
+			t.Fatalf("Meow video quality %d = %q, want %q", i, meowVideoQualities[i], want[i])
+		}
+	}
+}
+
 func TestYouTubeDownloadsRequireMeowAPI(t *testing.T) {
 	previousURL, previousKey := config.MeowApiUrl, config.MeowApiKey
 	config.MeowApiUrl, config.MeowApiKey = "", ""
