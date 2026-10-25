@@ -1,10 +1,10 @@
 module ashokshau/tgmusic
 
-go 1.26.0
+go 1.26.4
 
 require (
-	github.com/AshokShau/gotdbot v0.9.6
-	github.com/amarnathcjd/gogram v1.7.71
+	github.com/AshokShau/gotdbot v0.9.7-0.20261014122449-a88c95766955
+	github.com/amarnathcjd/gogram v1.7.10
 	github.com/joho/godotenv v1.5.1
 	github.com/shirou/gopsutil/v3 v3.24.5
 	go.mongodb.org/mongo-driver/v2 v2.9.2
@@ -17,7 +17,7 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20260802145828-341c2f0c90b5 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260916203055-22a1a467d9f0 // indirect
 	github.com/shoenig/go-m1cpu v0.2.4 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
+	github.com/stretchr/testify v1.12.0 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect

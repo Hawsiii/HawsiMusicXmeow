@@ -1,0 +1,325 @@
+/*
+ * TgMusicBot - Telegram Music Bot
+ *  Copyright (c) 2025-2026 Ashok Shau
+ *
+ *  Licensed under GNU GPL v3
+ *  See https://github.com/AshokShau/TgMusicBot
+ */
+
+package calls
+
+import (
+	"ashokshau/tgmusic/internal/cache"
+	"ashokshau/tgmusic/internal/db"
+	"ashokshau/tgmusic/internal/downloader"
+	"ashokshau/tgmusic/internal/messaging"
+	"ashokshau/tgmusic/internal/utils"
+	"context"
+	"errors"
+	"fmt"
+	"html"
+	"log/slog"
+	"math"
+	"strings"
+
+	td "github.com/AshokShau/gotdbot"
+)
+
+// errorKind classifies a Telegram group call error for retry strategy.
+type errorKind int
+
+const (
+	errFatal     errorKind = iota // return immediately with a user-facing message
+	errRetryOnce                  // retry the same assistant once (e.g. participants race)
+	errRotate                     // try a different assistant (flood/frozen/channels)
+	errUnknown                    // log and return as-is
+)
+
+func classifyError(err error) errorKind {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "is closed"),
+		strings.Contains(msg, "GROUPCALL_FORBIDDEN"):
+		return errFatal
+	case strings.Contains(msg, "GROUPCALL_INVALID"):
+		return errFatal
+	case strings.Contains(msg, "GROUPCALL_ADD_PARTICIPANTS_FAILED"),
+		strings.Contains(msg, "Timeout while fetching data"),
+		strings.Contains(msg, "INTERDC_X_CALL_ERROR"):
+		return errRetryOnce
+	case strings.Contains(msg, "CHANNELS_TOO_MUCH"),
+		strings.Contains(msg, "FROZEN_METHOD_INVALID"),
+		strings.Contains(msg, "FLOOD_WAIT_X"),
+		strings.Contains(msg, "limiting join attempts"),
+		strings.Contains(msg, "USER_DEACTIVATED"):
+		return errRotate
+	default:
+		return errUnknown
+	}
+}
+
+func fatalMessage(err error) error {
+	msg := err.Error()
+	if strings.Contains(msg, "is closed") || strings.Contains(msg, "GROUPCALL_FORBIDDEN") {
+		return errors.New("<b>No active video chat found.</b>\n\nPlease start one and <b>try again</b>")
+	}
+
+	if strings.Contains(msg, "GROUPCALL_INVALID") {
+		return errors.New("<b>GROUPCALL_INVALID:</b> start a video chat and try again.\n\nIf the problem persists, please report it to the developer.")
+	}
+	return err
+}
+
+func (c *TelegramCalls) playMediaWithAssistant(bot *td.Client, chatID int64, filePath string, video bool, ffmpegParameters string, call *AssistantAccount, index int) error {
+	if chatID > 0 {
+		return errors.New("private calls are not supported for media playback")
+	}
+
+	if err := c.ensureAssistantMember(bot, chatID, call, index); err != nil {
+		cache.ChatCache.ClearChat(chatID)
+		return err
+	}
+
+	logger.Debug("Playing media in chat", "id", chatID, "path", filePath, "index", index)
+
+	if ffmpegParameters == "" {
+		c.clearPlayedTimeOffset(chatID)
+	}
+
+	mediaDesc := getMediaDescription(filePath, video, chatID, ffmpegParameters)
+	if err := c.startCallStream(context.Background(), call, chatID, mediaDesc); err != nil {
+		cache.ChatCache.ClearChat(chatID)
+		return err
+	}
+
+	if db.Instance.GetLoggerStatus() {
+		go sendLogger(bot, chatID, cache.ChatCache.GetPlayingTrack(chatID))
+	}
+
+	return nil
+}
+
+func (c *TelegramCalls) PlayMedia(bot *td.Client, chatID int64, filePath string, video bool, ffmpegParameters ...string) error {
+	ffParam := ""
+	if len(ffmpegParameters) > 0 {
+		ffParam = ffmpegParameters[0]
+	}
+
+	call, index, err := c.GetAccount(chatID)
+	if err != nil {
+		return err
+	}
+
+	err = c.playMediaWithAssistant(bot, chatID, filePath, video, ffParam, call, index)
+	if err == nil {
+		_ = db.Instance.SetAssistant(chatID, index)
+		return nil
+	}
+
+	switch classifyError(err) {
+	case errFatal:
+		return fatalMessage(err)
+
+	case errUnknown:
+		logger.Error("Failed to play the media", "error", err, "index", index, "chatID", chatID)
+		return fmt.Errorf("playback failed: %w", err)
+
+	case errRetryOnce:
+		err = c.playMediaWithAssistant(bot, chatID, filePath, video, ffParam, call, index)
+		if err == nil {
+			_ = db.Instance.SetAssistant(chatID, index)
+			return nil
+		}
+		if classifyError(err) != errRotate {
+			return fmt.Errorf("playback failed: %w", err)
+		}
+		fallthrough // GROUPCALL_ADD_PARTICIPANTS_FAILED can escalate to rotation
+
+	case errRotate:
+		c.evictAssistant(chatID, index, err)
+	}
+
+	return c.rotateAndPlay(bot, chatID, filePath, video, ffParam, map[int]bool{index: true}, err)
+}
+
+func buildSpeedFilters(speed float64) (string, error) {
+	if math.IsNaN(speed) || math.IsInf(speed, 0) || speed < 0.5 || speed > 4.0 {
+		return "", errors.New("invalid speed. Value must be between 0.5 and 4.0")
+	}
+
+	remaining := speed
+	var audioFilter strings.Builder
+	for remaining > 2.0 {
+		audioFilter.WriteString("atempo=2.0,")
+		remaining /= 2.0
+	}
+	for remaining < 0.5 {
+		audioFilter.WriteString("atempo=0.5,")
+		remaining /= 0.5
+	}
+	audioFilter.WriteString(fmt.Sprintf("atempo=%f", remaining))
+
+	return fmt.Sprintf("-filter:v setpts=%f*PTS -filter:a %s", 1/speed, audioFilter.String()), nil
+}
+
+func (c *TelegramCalls) ChangeSpeed(bot *td.Client, chatID int64, speed float64) error {
+	filters, err := buildSpeedFilters(speed)
+	if err != nil {
+		return err
+	}
+
+	playingSong := cache.ChatCache.GetPlayingTrack(chatID)
+	if playingSong == nil {
+		return errors.New("the bot isn't streaming in the video chat")
+	}
+
+	return c.PlayMedia(bot, chatID, playingSong.FilePath, playingSong.IsVideo, filters)
+}
+
+func (c *TelegramCalls) evictAssistant(chatID int64, index int, err error) {
+	_ = db.Instance.RemoveAssistant(chatID)
+	if strings.Contains(err.Error(), "CHANNELS_TOO_MUCH") {
+		go func() { _, _ = c.LeaveAllForAccount(index) }()
+	}
+}
+
+func (c *TelegramCalls) rotateAndPlay(bot *td.Client, chatID int64, filePath string, video bool, ffmpegParameters string, tried map[int]bool, lastErr error) error {
+	for {
+		call, nextIndex, err := c.nextUntried(tried)
+		if err != nil {
+			logger.Error("Playback failed after full rotation", "error", lastErr, "chatID", chatID)
+			return fmt.Errorf("playback failed after trying all assistants: %w", lastErr)
+		}
+		tried[nextIndex] = true
+
+		err = c.playMediaWithAssistant(bot, chatID, filePath, video, ffmpegParameters, call, nextIndex)
+		if err == nil {
+			_ = db.Instance.SetAssistant(chatID, nextIndex)
+			return nil
+		}
+		lastErr = err
+
+		switch classifyError(err) {
+		case errRetryOnce:
+			err = c.playMediaWithAssistant(bot, chatID, filePath, video, ffmpegParameters, call, nextIndex)
+			if err == nil {
+				_ = db.Instance.SetAssistant(chatID, nextIndex)
+				return nil
+			}
+			lastErr = err
+			if classifyError(err) == errRotate {
+				c.evictAssistant(chatID, nextIndex, err)
+				continue
+			}
+			return fmt.Errorf("playback failed: %w", lastErr)
+
+		case errRotate:
+			c.evictAssistant(chatID, nextIndex, err)
+			continue
+
+		default:
+			// errFatal or errUnknown — stop rotating.
+			return fmt.Errorf("playback failed: %w", lastErr)
+		}
+	}
+}
+
+func (c *TelegramCalls) prepareTrackDownload(bot *td.Client, song *utils.PlayerCache, reply *td.Message) error {
+	if song.FilePath != "" {
+		return nil
+	}
+
+	dlPath, err := downloader.DlCachedTrack(song, bot)
+	song.FilePath = dlPath
+	if err == nil && song.FilePath == "" {
+		err = errors.New("download returned no file")
+	}
+	if err != nil {
+		_, _ = reply.EditText(bot, "⚠️ Download failed. Skipping track...", nil)
+		return err
+	}
+
+	return nil
+}
+
+func (c *TelegramCalls) PlayNext(bot *td.Client, chatID int64, quiet ...bool) error {
+	loop := cache.ChatCache.GetLoopCount(chatID)
+	if loop > 0 {
+		cache.ChatCache.SetLoopCount(chatID, loop-1)
+		if currentsSong := cache.ChatCache.GetPlayingTrack(chatID); currentsSong != nil {
+			return c.playTrack(bot, chatID, currentsSong, quiet...)
+		}
+	}
+
+	finishedTrack := cache.ChatCache.RemoveCurrentSong(chatID)
+	if nextSong := cache.ChatCache.GetPlayingTrack(chatID); nextSong != nil {
+		return c.playTrack(bot, chatID, nextSong, quiet...)
+	}
+
+	lastTrack := cache.ChatCache.GetLastAutoplayTrackID(chatID)
+	silent := len(quiet) > 0 && quiet[0]
+	if finishedTrack != nil {
+		silent = silent || finishedTrack.Silent
+		if finishedTrack.Platform == utils.Telegram || finishedTrack.Platform == utils.DirectLink {
+			lastTrack = strings.TrimSpace(finishedTrack.Name + " " + finishedTrack.Channel)
+		}
+	}
+	if lastTrack != "" && cache.ChatCache.GetAutoplay(chatID) {
+		return c.handleAutoplay(bot, chatID, lastTrack, silent)
+	}
+
+	return c.handleNoSong(bot, chatID, silent)
+}
+
+func (c *TelegramCalls) handleNoSong(bot *td.Client, chatID int64, quiet ...bool) error {
+	_ = c.Stop(chatID, false)
+	_, _ = messaging.Send(bot, chatID, "🎵 Queue finished. Add more songs with /play.", nil, len(quiet) > 0 && quiet[0])
+	return nil
+}
+
+func (c *TelegramCalls) playTrack(bot *td.Client, chatID int64, song *utils.PlayerCache, quiet ...bool) error {
+	reply, err := bot.SendMessage(chatID, fmt.Sprintf("Downloading %s...", song.Name), nil)
+	if err != nil {
+		slog.Info("[playTrack] Failed to send message", "error", err)
+		return err
+	}
+
+	return c.PlayTrackWithMessage(bot, reply, chatID, song, quiet...)
+}
+
+// PlayTrackWithMessage starts the queued track using an existing progress message.
+func (c *TelegramCalls) PlayTrackWithMessage(bot *td.Client, reply *td.Message, chatID int64, song *utils.PlayerCache, quiet ...bool) error {
+	if err := c.prepareTrackDownload(bot, song, reply); err != nil {
+		return c.PlayNext(bot, chatID, quiet...)
+	}
+
+	if err := c.PlayMedia(bot, chatID, song.FilePath, song.IsVideo); err != nil {
+		_, _ = reply.EditText(bot, err.Error(), &td.EditMessageTextOpts{ParseMode: "HTML", DisableWebPagePreview: true})
+		return nil
+	}
+
+	if song.Duration == 0 {
+		song.Duration = utils.GetMediaDuration(song.FilePath)
+	}
+
+	text := fmt.Sprintf(
+		"<u><b>| Started streaming</b></u>\n\n<b>Title:</b> <a href='%s'>%s</a>\n\n<b>Duration:</b> %s min\n<b>Requested by:</b> %s",
+		html.EscapeString(song.URL),
+		html.EscapeString(song.Name),
+		utils.SecToMin(song.Duration),
+		html.EscapeString(song.User),
+	)
+
+	_, err := messaging.FinishProgress(bot, reply, text, &td.EditMessageTextOpts{
+		ReplyMarkup:           utils.ControlButtons("play"),
+		ParseMode:             "HTML",
+		DisableWebPagePreview: true,
+	}, song.Silent || (len(quiet) > 0 && quiet[0]))
+
+	if err != nil {
+		slog.Info("[playTrack] Failed to edit message", "error", err)
+		return nil
+	}
+
+	return nil
+}
