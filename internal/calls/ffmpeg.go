@@ -57,12 +57,12 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 	if seekFlags != "" {
 		audioCmd.WriteString(seekFlags + " ")
 	}
-	audioCmd.WriteString("-i " + quotedPath + " ")
+	audioCmd.WriteString("-i " + quotedPath + " -map 0:a:0 ")
 	if audioFilter != "" {
 		audioCmd.WriteString("-af " + strconv.Quote(audioFilter) + " ")
 	}
 	audioCmd.WriteString(fmt.Sprintf(
-		"-fflags +nobuffer -flags low_delay -threads 0 -f s16le -ac %d -ar %d -loglevel error pipe:1",
+		"-fflags +nobuffer -flags low_delay -threads 2 -f s16le -ac %d -ar %d -loglevel error pipe:1",
 		audioDescription.ChannelCount,
 		audioDescription.SampleRate,
 	))
@@ -75,7 +75,7 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 		}
 	}
 
-	width, height := 1280, 720
+	width, height := 854, 480
 	if !isURL {
 		if sourceWidth, sourceHeight := getVideoDimensions(filePath); sourceWidth > 0 && sourceHeight > 0 {
 			width, height = fitVideoDimensions(sourceWidth, sourceHeight, width, height)
@@ -90,7 +90,7 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 	}
 
 	scaleFilter := fmt.Sprintf(
-		"scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
+		"scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=fast_bilinear,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
 		width,
 		height,
 		width,
@@ -110,12 +110,12 @@ func getMediaDescription(filePath string, isVideo bool, _ int64, ffmpegParameter
 	if seekFlags != "" {
 		videoCmd.WriteString(seekFlags + " ")
 	}
-	videoCmd.WriteString("-i " + quotedPath + " ")
+	videoCmd.WriteString("-i " + quotedPath + " -map 0:v:0 ")
 	if videoFilter != "" {
 		scaleFilter = videoFilter + "," + scaleFilter
 	}
 	videoCmd.WriteString(fmt.Sprintf(
-		"-fflags +nobuffer -flags low_delay -threads 0 -f rawvideo -r %d -pix_fmt yuv420p -vf %s -loglevel error pipe:1",
+		"-fflags +nobuffer -flags low_delay -threads 2 -f rawvideo -r %d -pix_fmt yuv420p -vf %s -loglevel error pipe:1",
 		videoDescription.Fps,
 		strconv.Quote(scaleFilter),
 	))

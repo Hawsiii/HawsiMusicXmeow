@@ -384,7 +384,7 @@ func (y *youTubeData) buildYtdlpFallbackParams(videoID string, video bool) []str
 	for index := range params {
 		if params[index] == "-f" && index+1 < len(params) {
 			if video {
-				params[index+1] = "best[height<=720]/best"
+				params[index+1] = "best[height<=480]/best"
 			} else {
 				params[index+1] = "ba/b"
 			}
@@ -408,19 +408,26 @@ func validateDownloadedMedia(filePath string, video bool) error {
 		return fmt.Errorf("downloaded media is empty: %s", filePath)
 	}
 
-	streamType := "a:0"
-	if video {
-		streamType = "v:0"
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", streamType,
+	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error",
 		"-show_entries", "stream=codec_type", "-of", "csv=p=0", filePath)
-	if output, err := cmd.Output(); err != nil || strings.TrimSpace(string(output)) == "" {
+	output, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(output)) == "" {
 		if ctx.Err() != nil {
 			return fmt.Errorf("timed out validating downloaded media: %s", filePath)
 		}
 		return fmt.Errorf("downloaded media is invalid or incomplete: %s", filePath)
+	}
+
+	streams := strings.Fields(string(output))
+	hasAudio, hasVideo := false, false
+	for _, stream := range streams {
+		hasAudio = hasAudio || stream == "audio"
+		hasVideo = hasVideo || stream == "video"
+	}
+	if !hasAudio || (video && !hasVideo) {
+		return fmt.Errorf("downloaded media is missing required streams (audio=%t, video=%t): %s", hasAudio, hasVideo, filePath)
 	}
 
 	return nil
@@ -452,9 +459,7 @@ func (y *youTubeData) buildYtdlpParams(videoID string, video bool) []string {
 	if video {
 		params = append(params,
 			"-f",
-			"bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]",
-			"--merge-output-format",
-			"mp4",
+			"best[height<=480][ext=mp4]/best[height<=480]/best[ext=mp4]/best",
 		)
 	} else {
 		params = append(params,

@@ -5,18 +5,21 @@ import (
 	"testing"
 )
 
-func TestGetMediaDescriptionUsesSharpVideoScaling(t *testing.T) {
+func TestGetMediaDescriptionUsesEfficientVideoScaling(t *testing.T) {
 	description := getMediaDescription("sample.mp4", true, 0, "")
 	if description.Camera == nil ||
 		!strings.Contains(description.Camera.Input, "ffmpeg -hide_banner -re -i ") ||
-		!strings.Contains(description.Camera.Input, "flags=lanczos") ||
+		!strings.Contains(description.Camera.Input, "-map 0:v:0") ||
+		!strings.Contains(description.Camera.Input, "flags=fast_bilinear") ||
 		!strings.Contains(description.Camera.Input, "scale=") ||
 		!strings.Contains(description.Camera.Input, "pad=") ||
 		strings.Contains(description.Camera.Input, "crop=") {
-		t.Fatalf("expected local video input to be paced and scaled, got %#v", description.Camera)
+		t.Fatalf("expected local video input to be mapped and efficiently scaled, got %#v", description.Camera)
 	}
-	if description.Microphone == nil || !strings.Contains(description.Microphone.Input, "ffmpeg -re -i ") {
-		t.Fatalf("expected local audio input to be paced, got %#v", description.Microphone)
+	if description.Microphone == nil ||
+		!strings.Contains(description.Microphone.Input, "ffmpeg -re -i ") ||
+		!strings.Contains(description.Microphone.Input, "-map 0:a:0") {
+		t.Fatalf("expected local audio input to be mapped and paced, got %#v", description.Microphone)
 	}
 }
 
@@ -73,7 +76,7 @@ func TestGetMediaDescriptionAppliesSpeedFilters(t *testing.T) {
 		t.Fatalf("expected audio speed filter, got %#v", description.Microphone)
 	}
 	if description.Camera == nil ||
-		!strings.Contains(description.Camera.Input, `-vf "setpts=0.5*PTS,scale=1280:720`) ||
+		!strings.Contains(description.Camera.Input, `-vf "setpts=0.5*PTS,scale=854:480`) ||
 		strings.Contains(description.Camera.Input, "-filter:a") {
 		t.Fatalf("expected video speed filter combined with scaling, got %#v", description.Camera)
 	}

@@ -78,16 +78,20 @@ func cachedFileUsable(filePath string, video bool) bool {
 		return false
 	}
 
-	streamType := "a:0"
-	if video {
-		streamType = "v:0"
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", streamType,
+	output, err := exec.CommandContext(ctx, "ffprobe", "-v", "error",
 		"-show_entries", "stream=codec_type", "-of", "csv=p=0", filePath).Output()
-	return err == nil && strings.TrimSpace(string(output)) != ""
+	if err != nil {
+		return false
+	}
+
+	hasAudio, hasVideo := false, false
+	for _, stream := range strings.Fields(string(output)) {
+		hasAudio = hasAudio || stream == "audio"
+		hasVideo = hasVideo || stream == "video"
+	}
+	return hasAudio && (!video || hasVideo)
 }
 
 func downloadViaWrapper(cached *utils.PlayerCache, dlBot *td.Client) (string, error) {

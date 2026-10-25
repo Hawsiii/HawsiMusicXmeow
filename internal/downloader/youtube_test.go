@@ -50,19 +50,19 @@ func TestBuildYtdlpParamsDoesNotUseCookieFiles(t *testing.T) {
 	}
 }
 
-func TestBuildYtdlpParamsPrefers720pVideo(t *testing.T) {
+func TestBuildYtdlpParamsPrefersCombined480pVideo(t *testing.T) {
 	params := (&youTubeData{}).buildYtdlpParams("abc123", true)
 
 	var found bool
 	for i := 0; i < len(params)-1; i++ {
-		if params[i] == "-f" && strings.Contains(params[i+1], "bestvideo[height<=720]") {
+		if params[i] == "-f" && strings.Contains(params[i+1], "best[height<=480]") {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Fatalf("expected yt-dlp params to prefer 720p video, got %v", params)
+		t.Fatalf("expected yt-dlp params to prefer combined video up to 480p, got %v", params)
 	}
 }
 
@@ -75,5 +75,13 @@ func TestBuildYtdlpFallbackParamsBroadensFormatSelection(t *testing.T) {
 	}
 	if !strings.Contains(joined, "youtube:player_client=android,web") {
 		t.Fatalf("expected alternate YouTube clients, got %v", params)
+	}
+}
+
+func TestBuildYtdlpVideoFallbackKeepsAudioAndVideoTogether(t *testing.T) {
+	params := (&youTubeData{}).buildYtdlpFallbackParams("abc123", true)
+	joined := strings.Join(params, " ")
+	if !strings.Contains(joined, "best[height<=480]/best") {
+		t.Fatalf("expected fallback to select a combined audio/video format, got %v", params)
 	}
 }
