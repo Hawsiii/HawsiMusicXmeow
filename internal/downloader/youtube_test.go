@@ -61,6 +61,29 @@ func TestMeowVideoDownloadUses720p(t *testing.T) {
 	}
 }
 
+func TestValidateDecodedVideoFrameCount(t *testing.T) {
+	tests := []struct {
+		name       string
+		frameCount int
+		wantError  bool
+	}{
+		{name: "no frames", frameCount: 0, wantError: true},
+		{name: "one frame", frameCount: 1, wantError: true},
+		{name: "two frames", frameCount: 2},
+		{name: "many frames", frameCount: 30},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateDecodedVideoFrameCount(test.frameCount)
+			if (err != nil) != test.wantError {
+				t.Fatalf("validateDecodedVideoFrameCount(%d) error = %v, want error %t",
+					test.frameCount, err, test.wantError)
+			}
+		})
+	}
+}
+
 func TestYouTubeDownloadsRequireMeowAPI(t *testing.T) {
 	previousURL, previousKey := config.MeowApiUrl, config.MeowApiKey
 	config.MeowApiUrl, config.MeowApiKey = "", ""

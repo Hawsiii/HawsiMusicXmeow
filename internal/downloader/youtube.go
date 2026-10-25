@@ -11,6 +11,7 @@ package downloader
 import (
 	"ashokshau/tgmusic/internal/config"
 	"ashokshau/tgmusic/internal/utils"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,9 @@ const (
 	meowAudioQuality = "128"
 	meowVideoQuality = "720"
 	videoRetryCount  = 3
+	videoFrameWidth  = 16
+	videoFrameHeight = 16
+	videoFrameBytes  = videoFrameWidth * videoFrameHeight * 3 / 2
 
 	// Reject tiny error or placeholder responses before probing their media streams.
 	meowMinValidSize = 10000
@@ -348,31 +352,30 @@ func validateDecodableVideoFrames(filePath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-read_intervals", "%+5",
-		"-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "json", filePath)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-i", filePath,
+		"-map", "0:v:0", "-an", "-sn", "-dn", "-vf", "scale=16:16",
+		"-frames:v", "2", "-fps_mode", "passthrough", "-pix_fmt", "yuv420p",
+		"-f", "rawvideo", "pipe:1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	output, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {
-			return fmt.Errorf("timed out checking video frames: %s", filePath)
+			return fmt.Errorf("timed out decoding video frames: %s", filePath)
 		}
-		return fmt.Errorf("failed to check video frames: %s: %w", filePath, err)
+		return fmt.Errorf("failed to decode video frames: %s: %w: %s", filePath, err, strings.TrimSpace(stderr.String()))
 	}
 
-	var probe struct {
-		Streams []struct {
-			FrameCount string `json:"nb_read_frames"`
-		} `json:"streams"`
+	frameCount := len(output) / videoFrameBytes
+	if err := validateDecodedVideoFrameCount(frameCount); err != nil {
+		return fmt.Errorf("%w: %s", err, filePath)
 	}
-	if err := json.Unmarshal(output, &probe); err != nil {
-		return fmt.Errorf("failed to parse video frame probe: %w", err)
-	}
-	if len(probe.Streams) == 0 {
-		return fmt.Errorf("downloaded video has no decodable frames: %s", filePath)
-	}
+	return nil
+}
 
-	frameCount, err := strconv.Atoi(probe.Streams[0].FrameCount)
-	if err != nil || frameCount < 2 {
-		return fmt.Errorf("downloaded video ends immediately: %s", filePath)
+func validateDecodedVideoFrameCount(frameCount int) error {
+	if frameCount < 2 {
+		return fmt.Errorf("downloaded video decodes only %d frames before ending", frameCount)
 	}
 	return nil
 }
